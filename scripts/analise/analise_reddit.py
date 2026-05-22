@@ -20,16 +20,14 @@ ARQ_COMMENTS = DATA_RAW_REDDIT_DIR / "reddit_swiftui_arch_comments_big.csv"
 plt.rcParams["axes.unicode_minus"] = False
 
 ARCHITECTURE_ALIASES = {
+    "MV": [r"\bMV\b", r"\bmodel[\s-]?view[\s-]?(?:architecture|pattern)\b"],
     "MVVM": [r"\bMVVM\b", r"\bmodel[\s-]?view[\s-]?viewmodel\b"],
     "MVVM-C": [r"\bMVVM[-\s]?C\b", r"\bMVVM Coordinator\b"],
     "MVC": [r"\bMVC\b", r"\bmodel[\s-]?view[\s-]?controller\b"],
     "MVP": [r"\bMVP\b", r"\bmodel[\s-]?view[\s-]?presenter\b"],
     "VIPER": [r"\bVIPER\b"],
-    "TCA": [r"\bTCA\b", r"\bthe composable architecture\b", r"\bcomposable architecture\b"],
-    "Clean Architecture": [r"\bclean architecture\b"],
-    "Coordinator": [r"\bcoordinator pattern\b", r"\bcoordinator architecture\b"],
+    "TCA": [r"\bTCA\b"],
     "MVI": [r"\bMVI\b", r"\bmodel[\s-]?view[\s-]?intent\b"],
-    "Redux": [r"\bredux\b", r"\bredux-like\b"],
     "RIBs": [r"\bRIBs\b", r"\brouter[\s-]?interactor[\s-]?builder\b"],
 }
 
@@ -178,7 +176,6 @@ def sentimento_por_arquitetura(posts: pd.DataFrame, comments: pd.DataFrame) -> N
         kind="bar",
         figsize=(11, 6),
     )
-    ax.set_title("Sentimento por arquitetura (posts + comentários)")
     ax.set_xlabel("Arquitetura")
     ax.set_ylabel("Número de menções")
     plt.xticks(rotation=30, ha="right")
@@ -222,7 +219,6 @@ def frequencia_arquiteturas(posts: pd.DataFrame, comments: pd.DataFrame) -> None
 
     plt.figure(figsize=(10, 5))
     plt.bar(freq_total["architecture"], freq_total["count_total"])
-    plt.title("Menções a arquiteturas em discussões SwiftUI (posts + comentários)")
     plt.xlabel("Arquitetura")
     plt.ylabel("Número de menções")
     plt.xticks(rotation=30, ha="right")
@@ -267,7 +263,6 @@ def distribuicao_por_subreddit(posts: pd.DataFrame, comments: pd.DataFrame) -> N
 
         plt.figure(figsize=(10, 5))
         plt.bar(df_sub["arch"], df_sub["count_total"])
-        plt.title(f"Menções a arquiteturas em {subreddit}")
         plt.xlabel("Arquitetura")
         plt.ylabel("Número de menções")
         plt.xticks(rotation=30, ha="right")
@@ -306,7 +301,6 @@ def evolucao_temporal(posts: pd.DataFrame) -> None:
             label=architecture,
         )
 
-    plt.title("Evolução mensal das arquiteturas em posts sobre SwiftUI")
     plt.xlabel("Ano-Mês")
     plt.ylabel("Número de posts")
     plt.xticks(rotation=45, ha="right")

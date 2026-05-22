@@ -29,15 +29,16 @@ SWIFTUI_KEYWORDS = [
 ]
 
 SEARCH_QUERIES = [
+    "SwiftUI MV",
     "SwiftUI MVVM",
     "SwiftUI MVP",
     "SwiftUI VIPER",
     "SwiftUI TCA",
+    "MV architecture SwiftUI",
     "MVVM architecture SwiftUI",
     "MVP architecture SwiftUI",
     "VIPER architecture SwiftUI",
     "TCA architecture SwiftUI",
-    "Clean architecture SwiftUI",
     "SwiftUI architecture",
 ]
 

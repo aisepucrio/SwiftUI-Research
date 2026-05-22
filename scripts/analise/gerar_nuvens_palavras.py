@@ -126,7 +126,6 @@ def plot_cloud(freq: pd.DataFrame, title: str, output_path: Path) -> None:
             transform=ax.transAxes,
         )
 
-    ax.set_title(title, fontsize=18, pad=16)
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close()

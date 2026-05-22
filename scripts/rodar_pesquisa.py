@@ -17,7 +17,10 @@ PARALLEL_STEPS = [
 ]
 
 SEQUENTIAL_STEPS = [
-    ("Comparacao entre fontes", ANALISE_DIR / "comparacao_fontes.py"),
+    (
+        "Comparacao GitHub Stack Overflow Forms",
+        ANALISE_DIR / "comparacao_github_stackoverflow_forms.py",
+    ),
     ("Nuvens de palavras", ANALISE_DIR / "gerar_nuvens_palavras.py"),
 ]
 

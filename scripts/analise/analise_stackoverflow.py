@@ -21,14 +21,14 @@ ARQ_ANSWERS = DATA_RAW_SO_DIR / "stackoverflow_swiftui_answers.csv"
 plt.rcParams["axes.unicode_minus"] = False
 
 ARCHITECTURE_ALIASES = {
+    "MV": [r"\bMV\b", r"\bmodel[\s-]?view[\s-]?(?:architecture|pattern)\b"],
     "MVVM": [r"\bMVVM\b", r"\bmodel[\s-]?view[\s-]?viewmodel\b"],
     "MVVM-C": [r"\bMVVM[-\s]?C\b", r"\bMVVM Coordinator\b"],
     "MVC": [r"\bMVC\b", r"\bmodel[\s-]?view[\s-]?controller\b"],
     "MVP": [r"\bMVP\b", r"\bmodel[\s-]?view[\s-]?presenter\b"],
     "VIPER": [r"\bVIPER\b"],
-    "TCA": [r"\bTCA\b", r"\bthe composable architecture\b", r"\bcomposable architecture\b"],
+    "TCA": [r"\bTCA\b"],
     "MVI": [r"\bMVI\b", r"\bmodel[\s-]?view[\s-]?intent\b"],
-    "Redux": [r"\bredux\b", r"\bredux-like\b"],
     "RIBs": [r"\bRIBs\b", r"\brouter[\s-]?interactor[\s-]?builder\b"],
 }
 
@@ -100,10 +100,10 @@ def preparar_arquiteturas(df: pd.DataFrame, text_col: str) -> pd.DataFrame:
 def classify_sentiment(compound: float) -> str:
     """Classifica o score compound do VADER em positivo, negativo ou neutro."""
     if compound >= 0.05:
-        return "positivo"
+        return "positive"
     if compound <= -0.05:
-        return "negativo"
-    return "neutro"
+        return "negative"
+    return "neutral"
 
 
 def preparar_sentimento(df: pd.DataFrame, text_col: str, sia: SentimentIntensityAnalyzer) -> pd.DataFrame:
@@ -137,7 +137,7 @@ def salvar_arquiteturas_monitoradas() -> None:
     ]
     out_csv = DATA_PROCESSED_SO_DIR / "arquiteturas_monitoradas.csv"
     pd.DataFrame(rows).to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
 
 def salvar_bases_reclassificadas(questions: pd.DataFrame, answers: pd.DataFrame) -> None:
@@ -146,8 +146,8 @@ def salvar_bases_reclassificadas(questions: pd.DataFrame, answers: pd.DataFrame)
     answers_out = DATA_PROCESSED_SO_DIR / "stackoverflow_answers_reclassificadas.csv"
     questions.to_csv(questions_out, index=False)
     answers.to_csv(answers_out, index=False)
-    print(f"Salvo: {questions_out}")
-    print(f"Salvo: {answers_out}")
+    print(f"Saved: {questions_out}")
+    print(f"Saved: {answers_out}")
 
 
 def frequencia_arquiteturas(questions: pd.DataFrame, answers: pd.DataFrame) -> None:
@@ -168,24 +168,23 @@ def frequencia_arquiteturas(questions: pd.DataFrame, answers: pd.DataFrame) -> N
     freq_total["count_total"] = freq_total["count_questions"] + freq_total["count_answers"]
     freq_total = freq_total.sort_values("count_total", ascending=False)
 
-    print("\n=== Frequência de arquiteturas (questions + answers) ===")
+    print("\n=== Architecture Frequency (questions + answers) ===")
     print(freq_total)
 
     out_csv = DATA_PROCESSED_SO_DIR / "freq_arquiteturas_total.csv"
     freq_total.to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     plt.figure(figsize=(10, 5))
     plt.bar(freq_total["architecture"], freq_total["count_total"])
-    plt.title("Menções a arquiteturas no Stack Overflow (tag SwiftUI)")
-    plt.xlabel("Arquitetura")
-    plt.ylabel("Número de menções")
+    plt.xlabel("Architecture")
+    plt.ylabel("Number of mentions")
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     out_png = OUTPUTS_SO_DIR / "grafico_freq_arquiteturas_total.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def evolucao_temporal(questions: pd.DataFrame) -> None:
@@ -200,14 +199,15 @@ def evolucao_temporal(questions: pd.DataFrame) -> None:
         .sort_values(["year_month", "num_questions"], ascending=[True, False])
     )
 
-    print("\n=== Evolução temporal por arquitetura (questions por mês) ===")
+    print("\n=== Monthly Architecture Evolution (questions per month) ===")
     print(counts)
 
     out_csv = DATA_PROCESSED_SO_DIR / "evolucao_arquiteturas_mes.csv"
     counts.to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     COLOR_MAP = {
+        "MV": "#ff7f0e",
         "MVVM": "#1f77b4",
         "MVVM-C": "#17becf",
         "MVC": "#2ca02c",
@@ -215,7 +215,6 @@ def evolucao_temporal(questions: pd.DataFrame) -> None:
         "VIPER": "#8c564b",
         "TCA": "#e377c2",
         "MVI": "#bcbd22",
-        "Redux": "#ff7f0e",
         "RIBs": "#7f7f7f",
     }
 
@@ -224,16 +223,15 @@ def evolucao_temporal(questions: pd.DataFrame) -> None:
         color = COLOR_MAP.get(architecture)
         plt.plot(df_arch["year_month"], df_arch["num_questions"], marker="o", label=architecture, color=color)
 
-    plt.title("Evolução mensal das arquiteturas no Stack Overflow (tag SwiftUI)")
-    plt.xlabel("Ano-Mês")
-    plt.ylabel("Número de perguntas")
+    plt.xlabel("Year-Month")
+    plt.ylabel("Number of questions")
     plt.xticks(rotation=45, ha="right")
     plt.legend()
     plt.tight_layout()
     out_png = OUTPUTS_SO_DIR / "grafico_evolucao_arquiteturas_mes.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def sentimento_por_arquitetura(questions: pd.DataFrame, answers: pd.DataFrame) -> None:
@@ -253,7 +251,7 @@ def sentimento_por_arquitetura(questions: pd.DataFrame, answers: pd.DataFrame) -
 
     out_csv = DATA_PROCESSED_SO_DIR / "sentimento_por_arquitetura.csv"
     sentiment_arch.to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     pivot = (
         sentiment_arch.pivot(index="arch", columns="sentiment_label", values="count")
@@ -261,28 +259,49 @@ def sentimento_por_arquitetura(questions: pd.DataFrame, answers: pd.DataFrame) -
         .astype(int)
     )
 
-    for column in ["positivo", "neutro", "negativo"]:
+    for column in ["positive", "neutral", "negative"]:
         if column not in pivot.columns:
             pivot[column] = 0
 
-    pivot = pivot[["positivo", "neutro", "negativo"]]
+    pivot = pivot[["positive", "neutral", "negative"]]
     pivot["total"] = pivot.sum(axis=1)
     pivot = pivot.sort_values("total", ascending=False)
 
     out_pivot = DATA_PROCESSED_SO_DIR / "sentimento_por_arquitetura_resumo.csv"
     pivot.reset_index().to_csv(out_pivot, index=False)
-    print(f"Salvo: {out_pivot}")
+    print(f"Saved: {out_pivot}")
 
-    ax = pivot[["positivo", "neutro", "negativo"]].plot(kind="bar", figsize=(11, 6))
-    ax.set_title("Sentimento por arquitetura (Stack Overflow — questions + answers)")
-    ax.set_xlabel("Arquitetura")
-    ax.set_ylabel("Número de menções")
+    percent = pivot[["positive", "neutral", "negative"]].div(pivot["total"], axis=0) * 100
+    percent = percent.fillna(0).round(2)
+    percent["total"] = pivot["total"]
+
+    out_percent = DATA_PROCESSED_SO_DIR / "sentimento_por_arquitetura_percentual.csv"
+    percent.reset_index().to_csv(out_percent, index=False)
+    print(f"Saved: {out_percent}")
+
+    colors = {
+        "positive": "#1f77b4",
+        "neutral": "#ff7f0e",
+        "negative": "#d62728",
+    }
+    ax = percent[["positive", "neutral", "negative"]].plot(
+        kind="bar",
+        stacked=True,
+        figsize=(11, 6),
+        color=[colors["positive"], colors["neutral"], colors["negative"]],
+        width=0.75,
+    )
+    ax.set_xlabel("Architecture")
+    ax.set_ylabel("% of mentions")
+    ax.set_ylim(0, 100)
+    ax.legend(title="Sentiment", loc="upper right")
+    ax.grid(axis="y", linestyle="--", alpha=0.35)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     out_png = OUTPUTS_SO_DIR / "grafico_sentimento_por_arquitetura.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def score_medio_por_arquitetura(questions: pd.DataFrame, answers: pd.DataFrame) -> None:
@@ -299,24 +318,23 @@ def score_medio_por_arquitetura(questions: pd.DataFrame, answers: pd.DataFrame) 
     ).round(2)
     score_df = score_df.sort_values("score_medio_total", ascending=False)
 
-    print("\n=== Score médio por arquitetura ===")
+    print("\n=== Average Score by Architecture ===")
     print(score_df)
 
     out_csv = DATA_PROCESSED_SO_DIR / "score_medio_por_arquitetura.csv"
     score_df.reset_index().to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     plt.figure(figsize=(10, 5))
     plt.bar(score_df.index, score_df["score_medio_total"])
-    plt.title("Score médio por arquitetura no Stack Overflow (votos da comunidade)")
-    plt.xlabel("Arquitetura")
-    plt.ylabel("Score médio")
+    plt.xlabel("Architecture")
+    plt.ylabel("Average score")
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     out_png = OUTPUTS_SO_DIR / "grafico_score_medio_por_arquitetura.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def main() -> None:
@@ -325,7 +343,7 @@ def main() -> None:
     OUTPUTS_SO_DIR.mkdir(parents=True, exist_ok=True)
 
     if not ARQ_QUESTIONS.exists() or not ARQ_ANSWERS.exists():
-        print("ERRO: Certifique-se de que os arquivos CSV gerados pelo scraper existem:")
+        print("ERROR: make sure the CSV files generated by the scraper exist:")
         print(f"- {ARQ_QUESTIONS}")
         print(f"- {ARQ_ANSWERS}")
         return
@@ -340,7 +358,7 @@ def main() -> None:
 
     print(f"Perguntas carregadas: {len(questions)}")
     print(f"Respostas carregadas: {len(answers)}")
-    print(f"Arquiteturas monitoradas: {', '.join(ARCHITECTURE_ALIASES.keys())}")
+    print(f"Monitored architectures: {', '.join(ARCHITECTURE_ALIASES.keys())}")
 
     salvar_arquiteturas_monitoradas()
     salvar_bases_reclassificadas(questions, answers)

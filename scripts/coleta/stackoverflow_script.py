@@ -20,7 +20,46 @@ PAGE_SIZE = 100
 REQUEST_DELAY_SECONDS = 0.5
 USER_AGENT = "tcc-swiftui-architecture-research/1.0"
 
-CORE_ARCH_KEYWORDS = ["MVVM", "MVP", "VIPER", "TCA", "MV", "MVVM-C", "MVI", "Redux", "RIBs"]
+ARCHITECTURE_PATTERNS = {
+    "MV": [
+        r"\bMV\b",
+        r"\bmodel[\s-]?view\b(?![\s-]?(?:viewmodel|controller|presenter|intent))",
+    ],
+    "MVVM": [
+        r"\bMVVM\b",
+        r"\bmodel[\s-]?view[\s-]?viewmodel\b",
+    ],
+    "MVVM-C": [
+        r"\bMVVM[-\s]?C\b",
+        r"\bMVVM Coordinator\b",
+        r"\bmodel[\s-]?view[\s-]?viewmodel[\s-]?coordinator\b",
+    ],
+    "MVC": [
+        r"\bMVC\b",
+        r"\bmodel[\s-]?view[\s-]?controller\b",
+    ],
+    "MVP": [
+        r"\bMVP\b",
+        r"\bmodel[\s-]?view[\s-]?presenter\b",
+    ],
+    "VIPER": [
+        r"\bVIPER\b",
+        r"\bview[\s-]?interactor[\s-]?presenter[\s-]?entity[\s-]?router\b",
+    ],
+    "TCA": [
+        r"\bTCA\b",
+        r"\bthe composable architecture\b",
+        r"\bcomposable architecture\b",
+    ],
+    "MVI": [
+        r"\bMVI\b",
+        r"\bmodel[\s-]?view[\s-]?intent\b",
+    ],
+    "RIBs": [
+        r"\bRIBs\b",
+        r"\brouter[\s-]?interactor[\s-]?builder\b",
+    ],
+}
 
 SWIFTUI_KEYWORDS = [
     "SwiftUI",
@@ -34,21 +73,58 @@ SWIFTUI_KEYWORDS = [
     "NavigationStack",
 ]
 
-SEARCH_QUERIES = [
-    "SwiftUI MVVM",
-    "SwiftUI MVP",
-    "SwiftUI VIPER",
-    "SwiftUI TCA composable architecture",
-    "MVVM architecture SwiftUI",
-    "SwiftUI architecture pattern",
-    "SwiftUI MVI",
-    "SwiftUI Redux",
-    "SwiftUI RIBs",
-]
+ARCHITECTURE_QUERIES = {
+    "MV": [
+        "SwiftUI MV",
+        "SwiftUI Model View",
+        "SwiftUI Model-View",
+    ],
+    "MVVM": [
+        "SwiftUI MVVM",
+        "SwiftUI Model View ViewModel",
+        "SwiftUI Model-View-ViewModel",
+    ],
+    "MVVM-C": [
+        "SwiftUI MVVM-C",
+        "SwiftUI MVVM Coordinator",
+        "SwiftUI Model View ViewModel Coordinator",
+    ],
+    "MVC": [
+        "SwiftUI MVC",
+        "SwiftUI Model View Controller",
+        "SwiftUI Model-View-Controller",
+    ],
+    "MVP": [
+        "SwiftUI MVP",
+        "SwiftUI Model View Presenter",
+        "SwiftUI Model-View-Presenter",
+    ],
+    "VIPER": [
+        "SwiftUI VIPER",
+        "SwiftUI View Interactor Presenter Entity Router",
+    ],
+    "TCA": [
+        "SwiftUI TCA",
+        "SwiftUI The Composable Architecture",
+        "SwiftUI Composable Architecture",
+    ],
+    "MVI": [
+        "SwiftUI MVI",
+        "SwiftUI Model View Intent",
+        "SwiftUI Model-View-Intent",
+    ],
+    "RIBs": [
+        "SwiftUI RIBs",
+        "SwiftUI Router Interactor Builder",
+        "SwiftUI Router-Interactor-Builder",
+    ],
+}
+
+GENERAL_SEARCH_QUERIES = ["SwiftUI architecture pattern"]
 
 ARCH_PATTERNS = {
-    kw: re.compile(rf"\b{re.escape(kw)}\b", re.IGNORECASE)
-    for kw in CORE_ARCH_KEYWORDS
+    arch: [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+    for arch, patterns in ARCHITECTURE_PATTERNS.items()
 }
 
 SWIFTUI_PATTERNS = {
@@ -94,11 +170,27 @@ def build_url(endpoint: str, params: Dict[str, Any]) -> str:
     return f"{BASE_URL}{endpoint}?{query}"
 
 
-def find_keywords(text: str, patterns: Dict[str, re.Pattern]) -> List[str]:
+def find_keywords(text: str, patterns: Dict[str, Any]) -> List[str]:
     """Retorna palavras-chave cujos padrões aparecem no texto informado."""
     if not text:
         return []
-    return [kw for kw, pattern in patterns.items() if pattern.search(text)]
+    found = []
+    for kw, pattern_or_patterns in patterns.items():
+        if isinstance(pattern_or_patterns, list):
+            if any(pattern.search(text) for pattern in pattern_or_patterns):
+                found.append(kw)
+        elif pattern_or_patterns.search(text):
+            found.append(kw)
+    return found
+
+
+def iter_search_queries() -> List[str]:
+    """Retorna consultas únicas preservando a ordem definida no script."""
+    queries = []
+    for arch_queries in ARCHITECTURE_QUERIES.values():
+        queries.extend(arch_queries)
+    queries.extend(GENERAL_SEARCH_QUERIES)
+    return list(dict.fromkeys(queries))
 
 
 def search_questions(query: str, api_key: Optional[str]) -> List[Dict[str, Any]]:
@@ -142,13 +234,13 @@ def collect_all_questions(api_key: Optional[str]) -> Dict[int, Dict[str, Any]]:
     """Coleta perguntas únicas que mencionam SwiftUI e arquitetura."""
     questions_by_id: Dict[int, Dict[str, Any]] = {}
 
-    for query in SEARCH_QUERIES:
+    for query in iter_search_queries():
         print(f"\nQuery: {query!r}")
         raw_questions = search_questions(query, api_key)
 
         for q in raw_questions:
             qid = q.get("question_id")
-            if not qid or qid in questions_by_id:
+            if not qid:
                 continue
 
             full_text = q.get("title", "") + "\n" + q.get("body", "")
@@ -160,8 +252,15 @@ def collect_all_questions(api_key: Optional[str]) -> Dict[int, Dict[str, Any]]:
             if not swiftui_hits:
                 swiftui_hits = ["swiftui (tag)"]
 
+            if qid in questions_by_id:
+                matched_queries = set(questions_by_id[qid]["matched_search_queries"].split(";"))
+                matched_queries.add(query)
+                questions_by_id[qid]["matched_search_queries"] = ";".join(sorted(matched_queries))
+                continue
+
             questions_by_id[qid] = {
                 "question_id": qid,
+                "matched_search_queries": query,
                 "title": q.get("title", ""),
                 "body": q.get("body", ""),
                 "tags": ",".join(q.get("tags", [])),
@@ -278,6 +377,10 @@ def main() -> None:
         answers,
         DATA_RAW_SO_DIR / "stackoverflow_swiftui_answers.csv",
     )
+    print("\nResumo da coleta Stack Overflow:")
+    print(f"  Total de perguntas coletadas: {len(questions)}")
+    print(f"  Total de respostas coletadas: {len(answers)}")
+    print(f"  Total de registros Q&A coletados: {len(questions) + len(answers)}")
 
 
 if __name__ == "__main__":

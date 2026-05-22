@@ -327,7 +327,6 @@ def grafico_participacao_relativa(base: pd.DataFrame) -> None:
     ].set_index("arquitetura")
 
     plot_df.plot(kind="bar", figsize=(12, 6))
-    plt.title("Cruzamento de participação relativa entre Reddit e Forms")
     plt.xlabel("Arquitetura")
     plt.ylabel("Participação relativa")
     plt.xticks(rotation=30, ha="right")
@@ -342,7 +341,6 @@ def grafico_gap_reddit_forms(base: pd.DataFrame) -> None:
     plt.figure(figsize=(12, 6))
     plt.bar(gap["arquitetura"], gap["delta_share_reddit_vs_forms_principal"], color=colors)
     plt.axhline(0, color="black", linewidth=0.8)
-    plt.title("Gap entre Reddit e Forms (arquitetura principal)")
     plt.xlabel("Arquitetura")
     plt.ylabel("Reddit share - Forms principal share")
     plt.xticks(rotation=30, ha="right")
@@ -364,7 +362,6 @@ def grafico_sentimento_vs_adesao(base: pd.DataFrame) -> None:
     )
     ax1.set_xlabel("Arquitetura")
     ax1.set_ylabel("Participação do sentimento no Reddit")
-    ax1.set_title("Cruzamento entre sentimento no Reddit e adoção no Forms")
     ax1.tick_params(axis="x", rotation=30)
 
     ax2 = ax1.twinx()

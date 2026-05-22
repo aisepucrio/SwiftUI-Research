@@ -335,7 +335,6 @@ def save_bar_chart(rows: list[dict], label_key: str, value_key: str, title: str,
     values = [int(row[value_key]) for row in rows]
     plt.figure(figsize=figsize)
     bars = plt.bar(labels, values, color="#2F6B6F")
-    plt.title(title)
     plt.ylabel("Ocorrencias")
     plt.xticks(rotation=25, ha="right")
     plt.tight_layout()
@@ -367,7 +366,6 @@ def save_heatmap(arch_category_rows: list[dict]) -> bool:
 
     plt.figure(figsize=(9, 4.8))
     plt.imshow(matrix, cmap="YlGnBu", aspect="auto")
-    plt.title("Arquitetura x categoria na analise qualitativa")
     plt.xticks(range(len(categories)), [CATEGORY_LABELS[item] for item in categories], rotation=25, ha="right")
     plt.yticks(range(len(architectures)), architectures)
     for i, row_counts in enumerate(matrix):

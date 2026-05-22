@@ -1,37 +1,37 @@
 # SwiftUI Research
 
-Projeto de coleta e análise de dados sobre arquiteturas utilizadas com SwiftUI
+Data collection and analysis project about software architectures used with SwiftUI.
 
-## Instalação
+## Installation
 
-Crie e ative um ambiente virtual:
+Create and activate a virtual environment:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Instale as dependências:
+Install the dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Baixe o léxico usado pelo NLTK para análise de sentimento:
+Download the lexicon used by NLTK for sentiment analysis:
 
 ```bash
 python -m nltk.downloader vader_lexicon
 ```
 
-## Configuração das APIs
+## API Configuration
 
-Crie um arquivo `.env` na raiz do projeto usando `.env.example` como referência:
+Create a `.env` file in the project root using `.env.example` as a template:
 
 ```bash
 cp .env.example .env
 ```
 
-Preencha as variáveis necessárias:
+Fill in the required variables:
 
 ```dotenv
 REDDIT_CLIENT_ID=
@@ -41,26 +41,26 @@ GITHUB_TOKEN=
 STACKOVERFLOW_KEY=
 ```
 
-O arquivo `.env` contém chaves e tokens reais, por isso fica fora do Git pelo `.gitignore`.
+The `.env` file contains real keys and tokens, so it is excluded from Git by `.gitignore`.
 
-## Como Rodar
+## How to Run
 
-Para executar toda a pipeline de análise usando os dados já presentes em `data/raw`:
+To run the full analysis pipeline using the data already available in `data/raw`:
 
 ```bash
 python scripts/rodar_pesquisa.py
 ```
 
-O comando roda as análises de Reddit, Stack Overflow, GitHub, Forms e a análise qualitativa, depois executa as comparações entre fontes e gera as nuvens de palavras.
+This command runs the Reddit, Stack Overflow, GitHub, Forms, and qualitative analyses. It then runs the cross-source comparisons and generates the word clouds.
 
-Os resultados são salvos em:
+Results are saved in:
 
-- `data/processed/`: arquivos CSV processados
-- `outputs/`: gráficos e relatórios gerados
+- `data/processed/`: processed CSV files
+- `outputs/`: generated charts and reports
 
-## Coleta de Dados
+## Data Collection
 
-Os scripts de coleta podem ser executados individualmente quando for necessário atualizar os dados brutos:
+The collection scripts can be run individually when the raw data needs to be updated:
 
 ```bash
 python scripts/coleta/reddit_script.py
@@ -68,11 +68,11 @@ python scripts/coleta/github_script.py
 python scripts/coleta/stackoverflow_script.py
 ```
 
-Eles usam as credenciais configuradas no `.env` e gravam os dados em `data/raw`.
+They use the credentials configured in `.env` and write the collected data to `data/raw`.
 
-## Análises Individuais
+## Individual Analyses
 
-Também é possível executar análises específicas:
+Specific analyses can also be run individually:
 
 ```bash
 python scripts/analise/analise_reddit.py
@@ -84,6 +84,6 @@ python scripts/analise/comparacao_fontes.py
 python scripts/analise/gerar_nuvens_palavras.py
 ```
 
-## Segurança
+## Security
 
-Não versionar arquivos com credenciais reais. Use `.env.example` apenas como modelo e mantenha as chaves no `.env` local.
+Do not commit files with real credentials. Use `.env.example` only as a template and keep keys in the local `.env` file.

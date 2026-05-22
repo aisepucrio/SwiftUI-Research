@@ -55,11 +55,62 @@ ARCHITECTURE_NORMALIZATION = {
     "mv": "MV",
     "viper": "VIPER",
     "tca": "TCA",
-    "clean architecture": "Clean Architecture",
-    "coordinator": "Coordinator",
+    "clean architecture": "",
+    "coordinator": "",
     "mvi": "MVI",
-    "redux": "Redux",
+    "redux": "",
     "ribs": "RIBs",
+    "depende do contexto": "Depends on context",
+}
+
+CATEGORY_TRANSLATIONS = {
+    "": "No answer",
+    "Sem resposta": "No answer",
+    "Sim": "Yes",
+    "Não": "No",
+    "Nao": "No",
+    "Parcialmente": "Partially",
+    "Não sei opinar": "No opinion",
+    "Nao sei opinar": "No opinion",
+    "Depende do Contexto": "Depends on context",
+    "depende do contexto": "Depends on context",
+    "Avançado": "Advanced",
+    "Avancado": "Advanced",
+    "Especialista": "Specialist",
+    "Intermediário": "Intermediate",
+    "Intermediario": "Intermediate",
+    "1–2 anos": "1-2 years",
+    "1-2 anos": "1-2 years",
+    "Mais de 2 anos": "More than 2 years",
+    "Facilidade": "Ease of use",
+    "Escalabilidade": "Scalability",
+    "Organização": "Organization",
+    "Organizacao": "Organization",
+    "Padrão da equipe": "Team standard",
+    "Padrao da equipe": "Team standard",
+    "Testabilidade": "Testability",
+    "Por pastas/camadas": "By folders/layers",
+    "Por feature/módulo": "By feature/module",
+    "Por feature/modulo": "By feature/module",
+    "Misturado": "Mixed",
+    "Pacote": "Package",
+    "Boilerplate": "Boilerplate",
+    "Não se aplica (nunca trabalhei)": "Not applicable (never used)",
+    "Nao se aplica (nunca trabalhei)": "Not applicable (never used)",
+    "Aumento desnecessário de complexidade": "Unnecessary complexity increase",
+    "Aumento desnecessario de complexidade": "Unnecessary complexity increase",
+    "Nunca usei arquiteturas mais complexas": "Never used more complex architectures",
+    "Dificuldade com Combine/async": "Difficulty with Combine/async",
+    "não saberia o motivo": "I would not know the reason",
+    "nao saberia o motivo": "I would not know the reason",
+    "não conheço/nunca usei": "I do not know it / never used it",
+    "nao conheco/nunca usei": "I do not know it / never used it",
+}
+
+CHART_AXIS_LABELS = {
+    "categoria": "Category",
+    "quantidade": "Count",
+    "architecture": "Architecture",
 }
 
 
@@ -79,6 +130,14 @@ def normalizar_arquitetura(value: str) -> str:
     return ARCHITECTURE_NORMALIZATION.get(key, value.strip())
 
 
+def translate_category(value: str) -> str:
+    """Translates survey categories to English for processed outputs and charts."""
+    if not isinstance(value, str):
+        return "No answer"
+    clean = value.strip()
+    return CATEGORY_TRANSLATIONS.get(clean, clean)
+
+
 def split_multiple_architectures(value: str) -> list[str]:
     """Divide respostas com múltiplas arquiteturas e normaliza cada item."""
     if not isinstance(value, str) or not value.strip():
@@ -91,32 +150,32 @@ def salvar_csv(df: pd.DataFrame, filename: str) -> None:
     """Salva um DataFrame no diretório de dados processados do Forms."""
     out = DATA_PROCESSED_FORMS_DIR / filename
     df.to_csv(out, index=False)
-    print(f"Salvo: {out}")
+    print(f"Saved: {out}")
 
 
 def salvar_grafico_barra(df: pd.DataFrame, x_col: str, y_col: str, title: str, filename: str) -> None:
     """Gera e salva um gráfico de barras simples para uma frequência tabular."""
     plt.figure(figsize=(10, 5))
     plt.bar(df[x_col], df[y_col])
-    plt.title(title)
-    plt.xlabel(x_col)
-    plt.ylabel(y_col)
+    plt.xlabel(CHART_AXIS_LABELS.get(x_col, x_col))
+    plt.ylabel(CHART_AXIS_LABELS.get(y_col, y_col))
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     out = OUTPUTS_FORMS_DIR / filename
     plt.savefig(out, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out}")
+    print(f"Chart saved: {out}")
 
 
 def frequencia_coluna(df: pd.DataFrame, column: str, output_name: str, chart_title: str, chart_name: str) -> None:
     """Calcula frequência de uma coluna categórica e salva CSV e gráfico."""
     freq = (
         df[column]
-        .fillna("Sem resposta")
+        .fillna("No answer")
         .astype(str)
         .str.strip()
-        .replace("", "Sem resposta")
+        .replace("", "No answer")
+        .apply(translate_category)
         .value_counts()
         .rename_axis("categoria")
         .reset_index(name="quantidade")
@@ -131,14 +190,14 @@ def perfil_respondentes(df: pd.DataFrame) -> None:
         df,
         COL_IOS_EXPERIENCE,
         "perfil_experiencia_ios.csv",
-        "Nível de experiência em desenvolvimento iOS",
+        "iOS Development Experience",
         "grafico_perfil_experiencia_ios.png",
     )
     frequencia_coluna(
         df,
         COL_SWIFTUI_EXPERIENCE,
         "perfil_experiencia_swiftui.csv",
-        "Tempo de experiência com SwiftUI",
+        "SwiftUI Experience",
         "grafico_perfil_experiencia_swiftui.png",
     )
 
@@ -161,7 +220,7 @@ def arquiteturas_utilizadas(df: pd.DataFrame) -> None:
         freq_used,
         "architecture",
         "quantidade",
-        "Arquiteturas já utilizadas em projetos SwiftUI",
+        "Architectures Used in SwiftUI Projects",
         "grafico_arquiteturas_utilizadas_forms.png",
     )
 
@@ -169,7 +228,8 @@ def arquiteturas_utilizadas(df: pd.DataFrame) -> None:
     main_arch["architecture"] = main_arch[COL_ARCH_MAIN].apply(normalizar_arquitetura)
     freq_main = (
         main_arch["architecture"]
-        .replace("", "Sem resposta")
+        .replace("", "No answer")
+        .apply(translate_category)
         .value_counts()
         .rename_axis("architecture")
         .reset_index(name="quantidade")
@@ -179,7 +239,7 @@ def arquiteturas_utilizadas(df: pd.DataFrame) -> None:
         freq_main,
         "architecture",
         "quantidade",
-        "Arquitetura mais utilizada atualmente",
+        "Main Architecture Currently Used",
         "grafico_arquitetura_principal_forms.png",
     )
 
@@ -187,7 +247,8 @@ def arquiteturas_utilizadas(df: pd.DataFrame) -> None:
     best_arch["architecture"] = best_arch[COL_BEST_ARCH].apply(normalizar_arquitetura)
     freq_best = (
         best_arch["architecture"]
-        .replace("", "Sem resposta")
+        .replace("", "No answer")
+        .apply(translate_category)
         .value_counts()
         .rename_axis("architecture")
         .reset_index(name="quantidade")
@@ -197,7 +258,7 @@ def arquiteturas_utilizadas(df: pd.DataFrame) -> None:
         freq_best,
         "architecture",
         "quantidade",
-        "Arquitetura considerada mais adequada ao ecossistema SwiftUI",
+        "Architecture Considered Most Suitable for SwiftUI",
         "grafico_arquitetura_mais_adequada_forms.png",
     )
 
@@ -208,35 +269,35 @@ def perguntas_fechadas(df: pd.DataFrame) -> None:
         df,
         COL_LAYER_ORG,
         "organizacao_camadas_forms.csv",
-        "Como os respondentes organizam as camadas",
+        "Layer Organization",
         "grafico_organizacao_camadas_forms.png",
     )
     frequencia_coluna(
         df,
         COL_EXTRA_LAYERS,
         "camadas_extras_forms.csv",
-        "Uso de camadas extras como UseCase, Repository ou Coordinator",
+        "Use of Extra Layers such as UseCase, Repository, or Coordinator",
         "grafico_camadas_extras_forms.png",
     )
     frequencia_coluna(
         df,
         COL_MVVM_PURE,
         "mvvm_puro_forms.csv",
-        "Percepção sobre comprometimento do MVVM puro",
+        "Perception of Pure MVVM Compromise",
         "grafico_mvvm_puro_forms.png",
     )
     frequencia_coluna(
         df,
         COL_VIPER_CHALLENGES,
         "desafios_viper_forms.csv",
-        "Principais desafios ao aplicar arquiteturas complexas em SwiftUI",
+        "Main Challenges When Applying Complex Architectures in SwiftUI",
         "grafico_desafios_viper_forms.png",
     )
     frequencia_coluna(
         df,
         COL_ARCH_REASON,
         "motivo_escolha_arquitetura_forms.csv",
-        "Principal motivo da escolha da arquitetura",
+        "Main Reason for Choosing the Architecture",
         "grafico_motivo_escolha_arquitetura_forms.png",
     )
 
@@ -244,38 +305,38 @@ def perguntas_fechadas(df: pd.DataFrame) -> None:
 def cruzamentos(df: pd.DataFrame) -> None:
     """Gera tabelas cruzadas entre experiência, camadas e arquitetura principal."""
     cross_ios_main = pd.crosstab(
-        df[COL_IOS_EXPERIENCE].fillna("Sem resposta"),
-        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "Sem resposta"),
+        df[COL_IOS_EXPERIENCE].fillna("No answer").apply(translate_category),
+        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "No answer").apply(translate_category),
     )
     salvar_csv(
-        cross_ios_main.reset_index(),
+        cross_ios_main.reset_index().rename(columns={COL_IOS_EXPERIENCE: "iOS experience"}),
         "cruzamento_experiencia_ios_x_arquitetura_principal.csv",
     )
 
     cross_swiftui_main = pd.crosstab(
-        df[COL_SWIFTUI_EXPERIENCE].fillna("Sem resposta"),
-        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "Sem resposta"),
+        df[COL_SWIFTUI_EXPERIENCE].fillna("No answer").apply(translate_category),
+        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "No answer").apply(translate_category),
     )
     salvar_csv(
-        cross_swiftui_main.reset_index(),
+        cross_swiftui_main.reset_index().rename(columns={COL_SWIFTUI_EXPERIENCE: "SwiftUI experience"}),
         "cruzamento_experiencia_swiftui_x_arquitetura_principal.csv",
     )
 
     cross_extra_main = pd.crosstab(
-        df[COL_EXTRA_LAYERS].fillna("Sem resposta"),
-        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "Sem resposta"),
+        df[COL_EXTRA_LAYERS].fillna("No answer").apply(translate_category),
+        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "No answer").apply(translate_category),
     )
     salvar_csv(
-        cross_extra_main.reset_index(),
+        cross_extra_main.reset_index().rename(columns={COL_EXTRA_LAYERS: "extra layers"}),
         "cruzamento_camadas_extras_x_arquitetura_principal.csv",
     )
 
     cross_mvvm_main = pd.crosstab(
-        df[COL_MVVM_PURE].fillna("Sem resposta"),
-        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "Sem resposta"),
+        df[COL_MVVM_PURE].fillna("No answer").apply(translate_category),
+        df[COL_ARCH_MAIN].apply(normalizar_arquitetura).replace("", "No answer").apply(translate_category),
     )
     salvar_csv(
-        cross_mvvm_main.reset_index(),
+        cross_mvvm_main.reset_index().rename(columns={COL_MVVM_PURE: "pure MVVM perception"}),
         "cruzamento_mvvm_puro_x_arquitetura_principal.csv",
     )
 
@@ -302,11 +363,11 @@ def main() -> None:
     OUTPUTS_FORMS_DIR.mkdir(parents=True, exist_ok=True)
 
     if not ARQ_FORMS.exists():
-        print(f"ERRO: arquivo não encontrado: {ARQ_FORMS}")
+        print(f"ERROR: file not found: {ARQ_FORMS}")
         return
 
     df = carregar_dados()
-    print(f"Respostas válidas (TCLE=Sim): {len(df)}")
+    print(f"Valid responses (consent=Yes): {len(df)}")
 
     perfil_respondentes(df)
     arquiteturas_utilizadas(df)

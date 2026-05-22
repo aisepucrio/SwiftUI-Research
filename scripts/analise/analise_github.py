@@ -19,6 +19,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 DEFAULT_BLUE = "#1f77b4"
 DEFAULT_ORANGE = "#ff7f0e"
+SWIFTUI_RELEASE_DATE = pd.Timestamp("2019-06-03", tz="UTC")
 LINE_COLORS_NO_RED = [
     "#1f77b4",
     "#ff7f0e",
@@ -31,14 +32,14 @@ LINE_COLORS_NO_RED = [
 ]
 
 ARCHITECTURE_ALIASES = {
+    "MV": [r"\bMV\b", r"\bmodel[\s-]?view[\s-]?(?:architecture|pattern)\b"],
     "MVVM": [r"\bMVVM\b", r"\bmodel[\s-]?view[\s-]?viewmodel\b"],
     "MVVM-C": [r"\bMVVM[-\s]?C\b", r"\bMVVM Coordinator\b"],
     "MVC": [r"\bMVC\b", r"\bmodel[\s-]?view[\s-]?controller\b"],
     "MVP": [r"\bMVP\b", r"\bmodel[\s-]?view[\s-]?presenter\b"],
     "VIPER": [r"\bVIPER\b"],
-    "TCA": [r"\bTCA\b", r"\bthe composable architecture\b", r"\bcomposable architecture\b"],
+    "TCA": [r"\bTCA\b"],
     "MVI": [r"\bMVI\b", r"\bmodel[\s-]?view[\s-]?intent\b"],
-    "Redux": [r"\bredux\b", r"\bredux-like\b"],
     "RIBs": [r"\bRIBs\b", r"\brouter[\s-]?interactor[\s-]?builder\b"],
 }
 
@@ -106,14 +107,14 @@ def salvar_arquiteturas_monitoradas() -> None:
     ]
     out_csv = DATA_PROCESSED_GITHUB_DIR / "arquiteturas_monitoradas.csv"
     pd.DataFrame(rows).to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
 
 def salvar_base_reclassificada(repos: pd.DataFrame) -> None:
     """Salva a base do GitHub enriquecida com arquiteturas detectadas."""
     out_csv = DATA_PROCESSED_GITHUB_DIR / "github_repos_reclassificados.csv"
     repos.to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
 
 def frequencia_arquiteturas(repos: pd.DataFrame) -> None:
@@ -127,24 +128,23 @@ def frequencia_arquiteturas(repos: pd.DataFrame) -> None:
         .sort_values("count_repos", ascending=False)
     )
 
-    print("\n=== Frequência de arquiteturas (repositórios) ===")
+    print("\n=== Architecture Frequency (repositories) ===")
     print(freq)
 
     out_csv = DATA_PROCESSED_GITHUB_DIR / "freq_arquiteturas_total.csv"
     freq.to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     plt.figure(figsize=(10, 5))
     plt.bar(freq["architecture"], freq["count_repos"], color=DEFAULT_BLUE)
-    plt.title("Número de repositórios por arquitetura no GitHub (SwiftUI)")
-    plt.xlabel("Arquitetura")
-    plt.ylabel("Número de repositórios")
+    plt.xlabel("Architecture")
+    plt.ylabel("Number of repositories")
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     out_png = OUTPUTS_GITHUB_DIR / "grafico_freq_arquiteturas_total.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def distribuicao_por_source(repos: pd.DataFrame) -> None:
@@ -159,7 +159,7 @@ def distribuicao_por_source(repos: pd.DataFrame) -> None:
 
     out_csv = DATA_PROCESSED_GITHUB_DIR / "freq_arquiteturas_por_source.csv"
     dist.to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     pivot = (
         dist.pivot(index="arch", columns="source", values="count")
@@ -169,28 +169,34 @@ def distribuicao_por_source(repos: pd.DataFrame) -> None:
     pivot["total"] = pivot.sum(axis=1)
     pivot = pivot.sort_values("total", ascending=False).drop(columns="total")
 
-    print("\n=== Distribuição por source e arquitetura ===")
+    print("\n=== Distribution by Source and Architecture ===")
     print(pivot)
 
+    pivot = pivot.rename(
+        columns={
+            "readme_search": "README search",
+            "repo_search": "Repository search",
+        }
+    )
     source_colors = {
-        "readme_search": DEFAULT_ORANGE,
-        "repo_search": DEFAULT_BLUE,
+        "README search": DEFAULT_ORANGE,
+        "Repository search": DEFAULT_BLUE,
     }
     ordered_colors = [source_colors.get(column, DEFAULT_BLUE) for column in pivot.columns]
     ax = pivot.plot(kind="bar", figsize=(11, 6), color=ordered_colors)
-    ax.set_title("Repositórios por arquitetura e origem da busca (GitHub)")
-    ax.set_xlabel("Arquitetura")
-    ax.set_ylabel("Número de repositórios")
+    ax.set_xlabel("Architecture")
+    ax.set_ylabel("Number of repositories")
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     out_png = OUTPUTS_GITHUB_DIR / "grafico_freq_arquiteturas_por_source.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def evolucao_temporal(repos: pd.DataFrame) -> None:
     """Calcula e plota a evolução mensal de repositórios por arquitetura."""
+    repos = repos[repos["created_iso"] >= SWIFTUI_RELEASE_DATE].copy()
     repos_arch = explodir_keywords(repos, "detected_architectures", "arch")
     repos_arch["year_month"] = repos_arch["created_iso"].dt.to_period("M").dt.to_timestamp()
 
@@ -201,12 +207,12 @@ def evolucao_temporal(repos: pd.DataFrame) -> None:
         .sort_values(["year_month", "num_repos"], ascending=[True, False])
     )
 
-    print("\n=== Evolução temporal por arquitetura (repos criados por mês) ===")
+    print("\n=== Monthly Architecture Evolution (repositories created per month) ===")
     print(counts)
 
     out_csv = DATA_PROCESSED_GITHUB_DIR / "evolucao_arquiteturas_mes.csv"
     counts.to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     plt.figure(figsize=(11, 6))
     plt.gca().set_prop_cycle(cycler(color=LINE_COLORS_NO_RED))
@@ -218,16 +224,15 @@ def evolucao_temporal(repos: pd.DataFrame) -> None:
             label=architecture,
         )
 
-    plt.title("Evolução mensal de repositórios por arquitetura (GitHub — SwiftUI)")
-    plt.xlabel("Ano-Mês")
-    plt.ylabel("Número de repositórios criados")
+    plt.xlabel("Year-Month")
+    plt.ylabel("Number of repositories created")
     plt.xticks(rotation=45, ha="right")
     plt.legend()
     plt.tight_layout()
     out_png = OUTPUTS_GITHUB_DIR / "grafico_evolucao_arquiteturas_mes.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def popularidade_por_arquitetura(repos: pd.DataFrame) -> None:
@@ -252,27 +257,25 @@ def popularidade_por_arquitetura(repos: pd.DataFrame) -> None:
 
     out_csv = DATA_PROCESSED_GITHUB_DIR / "popularidade_por_arquitetura.csv"
     pop.reset_index().to_csv(out_csv, index=False)
-    print(f"Salvo: {out_csv}")
+    print(f"Saved: {out_csv}")
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     axes[0].bar(pop.index, pop["stars_total"], color=DEFAULT_BLUE)
-    axes[0].set_title("Total de stars por arquitetura")
-    axes[0].set_xlabel("Arquitetura")
+    axes[0].set_xlabel("Architecture")
     axes[0].set_ylabel("Stars")
     axes[0].tick_params(axis="x", rotation=30)
 
     axes[1].bar(pop.index, pop["stars_medio"], color=DEFAULT_BLUE)
-    axes[1].set_title("Média de stars por repositório")
-    axes[1].set_xlabel("Arquitetura")
-    axes[1].set_ylabel("Stars médias")
+    axes[1].set_xlabel("Architecture")
+    axes[1].set_ylabel("Average stars")
     axes[1].tick_params(axis="x", rotation=30)
 
     plt.tight_layout()
     out_png = OUTPUTS_GITHUB_DIR / "grafico_popularidade_por_arquitetura.png"
     plt.savefig(out_png, dpi=300)
     plt.close()
-    print(f"Gráfico salvo: {out_png}")
+    print(f"Chart saved: {out_png}")
 
 
 def main() -> None:
@@ -281,14 +284,14 @@ def main() -> None:
     OUTPUTS_GITHUB_DIR.mkdir(parents=True, exist_ok=True)
 
     if not ARQ_REPOS.exists():
-        print(f"ERRO: Arquivo não encontrado: {ARQ_REPOS}")
+        print(f"ERROR: file not found: {ARQ_REPOS}")
         return
 
     repos = carregar_dados()
     repos = preparar_arquiteturas(repos)
 
     print(f"Repositórios carregados: {len(repos)}")
-    print(f"Arquiteturas monitoradas: {', '.join(ARCHITECTURE_ALIASES.keys())}")
+    print(f"Monitored architectures: {', '.join(ARCHITECTURE_ALIASES.keys())}")
 
     salvar_arquiteturas_monitoradas()
     salvar_base_reclassificada(repos)

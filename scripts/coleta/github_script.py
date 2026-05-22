@@ -6,6 +6,7 @@ import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.error import HTTPError, URLError
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,15 +20,50 @@ USER_AGENT = "tcc-swiftui-architecture-research/1.0"
 MAX_PAGES_PER_QUERY = 10 
 
 ARCHITECTURE_QUERIES = {
-    "MVVM":   "MVVM",
-    "MVVM-C": "MVVM-C",
-    "MVC":    "MVC",
-    "MVP":    "MVP",
-    "VIPER":  "VIPER",
-    "TCA":    "composable architecture",
-    "MVI":    "MVI",
-    "Redux":  "Redux",
-    "RIBs":   "RIBs",
+    "MV": [
+        "MV",
+        "Model View",
+        "Model-View",
+    ],
+    "MVVM": [
+        "MVVM",
+        "Model View ViewModel",
+        "Model-View-ViewModel",
+    ],
+    "MVVM-C": [
+        "MVVM-C",
+        "MVVM Coordinator",
+        "Model View ViewModel Coordinator",
+    ],
+    "MVC": [
+        "MVC",
+        "Model View Controller",
+        "Model-View-Controller",
+    ],
+    "MVP": [
+        "MVP",
+        "Model View Presenter",
+        "Model-View-Presenter",
+    ],
+    "VIPER": [
+        "VIPER",
+        "View Interactor Presenter Entity Router",
+    ],
+    "TCA": [
+        "TCA",
+        "The Composable Architecture",
+        "ComposableArchitecture",
+    ],
+    "MVI": [
+        "MVI",
+        "Model View Intent",
+        "Model-View-Intent",
+    ],
+    "RIBs": [
+        "RIBs",
+        "Router Interactor Builder",
+        "Router-Interactor-Builder",
+    ],
 }
 
 
@@ -59,7 +95,7 @@ def load_token() -> Optional[str]:
     return token
 
 
-def fetch_json(url: str, token: Optional[str]) -> Dict[str, Any]:
+def fetch_json(url: str, token: Optional[str], max_retries: int = 3) -> Dict[str, Any]:
     """Executa uma requisição GET à API do GitHub e retorna o JSON decodificado."""
     headers = {
         "User-Agent": USER_AGENT,
@@ -69,15 +105,58 @@ def fetch_json(url: str, token: Optional[str]) -> Dict[str, Any]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            retry_after = e.headers.get("Retry-After")
+            rate_remaining = e.headers.get("X-RateLimit-Remaining")
+            rate_reset = e.headers.get("X-RateLimit-Reset")
+
+            should_retry = e.code in {403, 429, 500, 502, 503, 504}
+            if not should_retry or attempt == max_retries:
+                raise RuntimeError(
+                    f"GitHub API falhou ({e.code}) para {url}: {body[:300]}"
+                ) from e
+
+            wait_seconds = 30
+            if retry_after and retry_after.isdigit():
+                wait_seconds = int(retry_after)
+            elif rate_remaining == "0" and rate_reset and rate_reset.isdigit():
+                wait_seconds = max(int(rate_reset) - int(time.time()) + 5, wait_seconds)
+
+            print(
+                f"  AVISO: GitHub API retornou {e.code}; "
+                f"tentando novamente em {wait_seconds}s ({attempt}/{max_retries})"
+            )
+            time.sleep(wait_seconds)
+        except URLError as e:
+            if attempt == max_retries:
+                raise RuntimeError(f"Falha de rede ao acessar {url}: {e}") from e
+            wait_seconds = 10 * attempt
+            print(
+                f"  AVISO: falha de rede; "
+                f"tentando novamente em {wait_seconds}s ({attempt}/{max_retries})"
+            )
+            time.sleep(wait_seconds)
+
+    raise RuntimeError(f"GitHub API falhou para {url}")
 
 
-def _repo_to_row(architecture: str, repo: Dict[str, Any], source: str) -> Dict[str, Any]:
+def _repo_to_row(
+    architecture: str,
+    repo: Dict[str, Any],
+    source: str,
+    matched_query: str,
+) -> Dict[str, Any]:
     """Converte um payload de repositório do GitHub para uma linha tabular."""
     return {
         "architecture": architecture,
         "source": source,
+        "matched_queries": matched_query,
         "repo_id": repo.get("id", ""),
         "full_name": repo.get("full_name", ""),
         "name": repo.get("name", ""),
@@ -122,12 +201,12 @@ def search_repos(
         for repo in items:
             rid = repo.get("id")
             if rid and rid not in results:
-                results[rid] = _repo_to_row(architecture, repo, "repo_search")
+                results[rid] = _repo_to_row(architecture, repo, "repo_search", keyword)
 
         if len(items) < 100:
             break
 
-    print(f"  [{architecture}] repo_search: {len(results)} repos")
+    print(f"  [{architecture} | {keyword}] repo_search: {len(results)} repos")
     return results
 
 
@@ -139,7 +218,7 @@ def search_readme(
 ) -> Dict[int, Dict[str, Any]]:
     """Busca a palavra-chave em arquivos README de repositórios Swift."""
     results: Dict[int, Dict[str, Any]] = {}
-    query = f"{keyword} language:swift filename:README"
+    query = f"swiftui {keyword} language:swift filename:README"
 
     for page in range(1, MAX_PAGES_PER_QUERY + 1):
         params = urllib.parse.urlencode({
@@ -158,34 +237,47 @@ def search_readme(
             repo = item.get("repository", {})
             rid = repo.get("id")
             if rid and rid not in results:
-                results[rid] = _repo_to_row(architecture, repo, "readme_search")
+                results[rid] = _repo_to_row(architecture, repo, "readme_search", keyword)
 
         if len(items) < 100:
             break
 
-    print(f"  [{architecture}] readme_search: {len(results)} repos")
+    print(f"  [{architecture} | {keyword}] readme_search: {len(results)} repos")
     return results
+
+
+def merge_repo_results(
+    merged: Dict[int, Dict[str, Any]],
+    new_rows: Dict[int, Dict[str, Any]],
+) -> None:
+    """Adiciona resultados ao acumulador, preservando fontes e queries encontradas."""
+    for rid, row in new_rows.items():
+        if rid not in merged:
+            merged[rid] = row
+            continue
+
+        sources = set(merged[rid]["source"].split(";"))
+        sources.update(row["source"].split(";"))
+        merged[rid]["source"] = ";".join(sorted(sources))
+
+        queries = set(merged[rid]["matched_queries"].split(";"))
+        queries.update(row["matched_queries"].split(";"))
+        merged[rid]["matched_queries"] = ";".join(sorted(queries))
 
 
 def collect_architecture(
     architecture: str,
-    keyword: str,
+    keywords: List[str],
     token: Optional[str],
     limiter: RateLimiter,
 ) -> List[Dict[str, Any]]:
     """Coleta repositórios de uma arquitetura e consolida resultados duplicados."""
-    repo_results = search_repos(architecture, keyword, token, limiter)
-    readme_results = search_readme(architecture, keyword, token, limiter)
-
-    # Marca repos encontrados em ambas as fontes
     merged: Dict[int, Dict[str, Any]] = {}
-    for rid, row in repo_results.items():
-        merged[rid] = row
-    for rid, row in readme_results.items():
-        if rid in merged:
-            merged[rid]["source"] = "both"
-        else:
-            merged[rid] = row
+    for keyword in keywords:
+        repo_results = search_repos(architecture, keyword, token, limiter)
+        readme_results = search_readme(architecture, keyword, token, limiter)
+        merge_repo_results(merged, repo_results)
+        merge_repo_results(merged, readme_results)
 
     return list(merged.values())
 
@@ -217,8 +309,8 @@ def main() -> None:
 
     with ThreadPoolExecutor(max_workers=len(ARCHITECTURE_QUERIES)) as executor:
         futures = {
-            executor.submit(collect_architecture, arch, keyword, token, limiter): arch
-            for arch, keyword in ARCHITECTURE_QUERIES.items()
+            executor.submit(collect_architecture, arch, keywords, token, limiter): arch
+            for arch, keywords in ARCHITECTURE_QUERIES.items()
         }
         for future in as_completed(futures):
             arch = futures[future]
@@ -230,7 +322,14 @@ def main() -> None:
         all_repos,
         DATA_RAW_GITHUB_DIR / "github_swiftui_repos.csv",
     )
-    print(f"\nTOTAL de repos coletados: {len(all_repos)}")
+    unique_repo_ids = {
+        row["repo_id"]
+        for row in all_repos
+        if row.get("repo_id")
+    }
+    print("\nResumo da coleta GitHub:")
+    print(f"  Total de linhas coletadas: {len(all_repos)}")
+    print(f"  Total de repositórios únicos: {len(unique_repo_ids)}")
 
 
 if __name__ == "__main__":
