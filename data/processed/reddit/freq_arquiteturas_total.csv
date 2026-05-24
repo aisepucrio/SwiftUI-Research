@@ -1,0 +1,10 @@
+architecture,count_posts,count_comments,count_total
+MVVM,370,465,835
+TCA,49,197,246
+MVC,41,65,106
+MV,14,43,57
+MVP,30,14,44
+VIPER,17,24,41
+MVVM-C,8,7,15
+MVI,3,1,4
+RIBs,1,0,1

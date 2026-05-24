@@ -4,7 +4,8 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
-from cycler import cycler
+from matplotlib.dates import DateFormatter, YearLocator
+from matplotlib.lines import Line2D
 
 matplotlib.use("Agg")
 
@@ -20,16 +21,18 @@ plt.rcParams["axes.unicode_minus"] = False
 DEFAULT_BLUE = "#1f77b4"
 DEFAULT_ORANGE = "#ff7f0e"
 SWIFTUI_RELEASE_DATE = pd.Timestamp("2019-06-03", tz="UTC")
-LINE_COLORS_NO_RED = [
-    "#1f77b4",
-    "#ff7f0e",
-    "#2ca02c",
-    "#9467bd",
-    "#8c564b",
-    "#7f7f7f",
-    "#bcbd22",
-    "#17becf",
-]
+ARCHITECTURE_ORDER = ["MVVM", "MV", "TCA", "MVVM-C", "MVC", "MVP", "VIPER", "MVI", "RIBs"]
+ARCHITECTURE_COLORS = {
+    "MVVM": "#1f77b4",
+    "MV": "#ff7f0e",
+    "TCA": "#2ca02c",
+    "MVVM-C": "#d62728",
+    "MVC": "#9467bd",
+    "MVP": "#8c564b",
+    "VIPER": "#e377c2",
+    "MVI": "#7f7f7f",
+    "RIBs": "#bcbd22",
+}
 
 ARCHITECTURE_ALIASES = {
     "MV": [r"\bMV\b", r"\bmodel[\s-]?view[\s-]?(?:architecture|pattern)\b"],
@@ -214,20 +217,39 @@ def evolucao_temporal(repos: pd.DataFrame) -> None:
     counts.to_csv(out_csv, index=False)
     print(f"Saved: {out_csv}")
 
-    plt.figure(figsize=(11, 6))
-    plt.gca().set_prop_cycle(cycler(color=LINE_COLORS_NO_RED))
-    for architecture, df_arch in counts.groupby("arch"):
-        plt.plot(
+    fig, ax = plt.subplots(figsize=(11, 6))
+    for architecture in ARCHITECTURE_ORDER:
+        df_arch = counts[counts["arch"] == architecture]
+        if df_arch.empty:
+            continue
+        ax.plot(
             df_arch["year_month"],
             df_arch["num_repos"],
             marker="o",
             label=architecture,
+            color=ARCHITECTURE_COLORS.get(architecture),
         )
 
-    plt.xlabel("Year-Month")
-    plt.ylabel("Number of repositories created")
+    ax.set_xlabel("Years")
+    ax.set_ylabel("Number of mentions")
+    ax.set_ylim(top=counts["num_repos"].max() * 1.35)
+    ax.xaxis.set_major_locator(YearLocator())
+    ax.xaxis.set_major_formatter(DateFormatter("%Y"))
     plt.xticks(rotation=45, ha="right")
-    plt.legend()
+    legend_handles = [
+        Line2D([0], [0], color=ARCHITECTURE_COLORS[architecture], marker="o", label=architecture)
+        for architecture in ARCHITECTURE_ORDER
+    ]
+    ax.legend(
+        handles=legend_handles,
+        loc="upper right",
+        ncol=3,
+        frameon=True,
+        framealpha=0.95,
+        fontsize=8,
+        handlelength=1.8,
+        columnspacing=0.8,
+    )
     plt.tight_layout()
     out_png = OUTPUTS_GITHUB_DIR / "grafico_evolucao_arquiteturas_mes.png"
     plt.savefig(out_png, dpi=300)

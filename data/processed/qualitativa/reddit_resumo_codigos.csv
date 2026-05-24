@@ -1,0 +1,12 @@
+code,count
+gestao_estado,18
+avaliacao_geral_arquitetura,18
+organizacao_camadas,18
+simplicidade,12
+complexidade_excessiva,11
+aprendizado_curva,10
+testabilidade,10
+escalabilidade,7
+manutenibilidade,7
+boilerplate,2
+aderencia_swiftui,1

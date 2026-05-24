@@ -1,0 +1,17 @@
+arch,sentiment_label,count
+MV,negative,1
+MV,positive,4
+MVC,negative,4
+MVC,positive,13
+MVI,positive,1
+MVP,negative,3
+MVP,positive,5
+MVVM,negative,78
+MVVM,neutral,9
+MVVM,positive,231
+MVVM-C,positive,3
+TCA,negative,4
+TCA,neutral,1
+TCA,positive,10
+VIPER,negative,4
+VIPER,positive,5

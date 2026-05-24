@@ -1,0 +1,5 @@
+interpretive_profile,architectures,count,average_github_share,average_stackoverflow_share,average_survey_used_share,average_multicriteria_index
+consistent_across_sources,"MVC, MVP, MVVM-C, TCA, VIPER",5,0.0585,0.0277,0.0588,0.1319
+github_strong,"MVI, RIBs",2,0.0125,0.0013,0.0,0.0479
+survey_strong,"Depends on context, MV",2,0.0438,0.0066,0.1618,0.1982
+stackoverflow_strong,MVVM,1,0.5949,0.8457,0.3824,0.9061

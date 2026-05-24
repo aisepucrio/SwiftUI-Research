@@ -5,6 +5,8 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.dates import DateFormatter, YearLocator
+from matplotlib.lines import Line2D
 from nltk.sentiment import SentimentIntensityAnalyzer
 
 matplotlib.use("Agg")
@@ -19,6 +21,19 @@ ARQ_QUESTIONS = DATA_RAW_SO_DIR / "stackoverflow_swiftui_questions.csv"
 ARQ_ANSWERS = DATA_RAW_SO_DIR / "stackoverflow_swiftui_answers.csv"
 
 plt.rcParams["axes.unicode_minus"] = False
+
+ARCHITECTURE_ORDER = ["MVVM", "MV", "TCA", "MVVM-C", "MVC", "MVP", "VIPER", "MVI", "RIBs"]
+ARCHITECTURE_COLORS = {
+    "MVVM": "#1f77b4",
+    "MV": "#ff7f0e",
+    "TCA": "#2ca02c",
+    "MVVM-C": "#d62728",
+    "MVC": "#9467bd",
+    "MVP": "#8c564b",
+    "VIPER": "#e377c2",
+    "MVI": "#7f7f7f",
+    "RIBs": "#bcbd22",
+}
 
 ARCHITECTURE_ALIASES = {
     "MV": [r"\bMV\b", r"\bmodel[\s-]?view[\s-]?(?:architecture|pattern)\b"],
@@ -206,27 +221,39 @@ def evolucao_temporal(questions: pd.DataFrame) -> None:
     counts.to_csv(out_csv, index=False)
     print(f"Saved: {out_csv}")
 
-    COLOR_MAP = {
-        "MV": "#ff7f0e",
-        "MVVM": "#1f77b4",
-        "MVVM-C": "#17becf",
-        "MVC": "#2ca02c",
-        "MVP": "#9467bd",
-        "VIPER": "#8c564b",
-        "TCA": "#e377c2",
-        "MVI": "#bcbd22",
-        "RIBs": "#7f7f7f",
-    }
+    fig, ax = plt.subplots(figsize=(11, 6))
+    for architecture in ARCHITECTURE_ORDER:
+        df_arch = counts[counts["arch"] == architecture]
+        if df_arch.empty:
+            continue
+        ax.plot(
+            df_arch["year_month"],
+            df_arch["num_questions"],
+            marker="o",
+            label=architecture,
+            color=ARCHITECTURE_COLORS.get(architecture),
+        )
 
-    plt.figure(figsize=(11, 6))
-    for architecture, df_arch in counts.groupby("arch"):
-        color = COLOR_MAP.get(architecture)
-        plt.plot(df_arch["year_month"], df_arch["num_questions"], marker="o", label=architecture, color=color)
-
-    plt.xlabel("Year-Month")
-    plt.ylabel("Number of questions")
+    ax.set_xlabel("Years")
+    ax.set_ylabel("Number of mentions")
+    ax.set_ylim(top=counts["num_questions"].max() * 1.35)
+    ax.xaxis.set_major_locator(YearLocator())
+    ax.xaxis.set_major_formatter(DateFormatter("%Y"))
     plt.xticks(rotation=45, ha="right")
-    plt.legend()
+    legend_handles = [
+        Line2D([0], [0], color=ARCHITECTURE_COLORS[architecture], marker="o", label=architecture)
+        for architecture in ARCHITECTURE_ORDER
+    ]
+    ax.legend(
+        handles=legend_handles,
+        loc="upper right",
+        ncol=3,
+        frameon=True,
+        framealpha=0.95,
+        fontsize=8,
+        handlelength=1.8,
+        columnspacing=0.8,
+    )
     plt.tight_layout()
     out_png = OUTPUTS_SO_DIR / "grafico_evolucao_arquiteturas_mes.png"
     plt.savefig(out_png, dpi=300)

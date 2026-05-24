@@ -1,0 +1,10 @@
+architecture,patterns
+MV,\bMV\b | \bmodel[\s-]?view[\s-]?(?:architecture|pattern)\b
+MVVM,\bMVVM\b | \bmodel[\s-]?view[\s-]?viewmodel\b
+MVVM-C,\bMVVM[-\s]?C\b | \bMVVM Coordinator\b
+MVC,\bMVC\b | \bmodel[\s-]?view[\s-]?controller\b
+MVP,\bMVP\b | \bmodel[\s-]?view[\s-]?presenter\b
+VIPER,\bVIPER\b
+TCA,\bTCA\b
+MVI,\bMVI\b | \bmodel[\s-]?view[\s-]?intent\b
+RIBs,\bRIBs\b | \brouter[\s-]?interactor[\s-]?builder\b

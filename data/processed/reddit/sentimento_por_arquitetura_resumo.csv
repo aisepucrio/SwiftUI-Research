@@ -1,0 +1,10 @@
+arch,positivo,neutro,negativo,total
+MVVM,575,131,129,835
+TCA,186,23,37,246
+MVC,88,6,12,106
+MV,46,4,7,57
+MVP,36,4,4,44
+VIPER,32,5,4,41
+MVVM-C,13,1,1,15
+MVI,4,0,0,4
+RIBs,1,0,0,1

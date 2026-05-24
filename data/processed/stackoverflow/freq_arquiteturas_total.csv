@@ -1,0 +1,9 @@
+architecture,count_questions,count_answers,count_total
+MVVM,261,57,318
+MVC,8,9,17
+TCA,11,4,15
+VIPER,7,2,9
+MVP,7,1,8
+MV,3,2,5
+MVVM-C,3,0,3
+MVI,1,0,1

@@ -1,0 +1,11 @@
+architecture,multicriteria_index,github_share_norm,stackoverflow_share_norm,survey_used_share_norm,survey_most_suitable_share_norm,average_stars_norm,average_stackoverflow_score_norm,interpretive_profile,multicriteria_rank
+MVVM,0.9061,1.0,1.0,1.0,0.8333,0.7679,0.0856,stackoverflow_strong,1
+MV,0.3713,0.1472,0.0157,0.8462,1.0,0.0438,0.1399,survey_strong,2
+TCA,0.2079,0.2164,0.0472,0.0769,0.1667,1.0,0.0317,consistent_across_sources,3
+MVVM-C,0.1707,0.0975,0.0094,0.0769,0.0,0.7854,1.0,consistent_across_sources,4
+MVC,0.1058,0.0606,0.0535,0.1538,0.0,0.1062,0.7179,consistent_across_sources,5
+MVP,0.0909,0.0364,0.0252,0.3077,0.0,0.1166,0.0466,consistent_across_sources,6
+VIPER,0.084,0.0811,0.0283,0.1538,0.0,0.2367,0.0451,consistent_across_sources,7
+RIBs,0.0658,0.0064,0.0,0.0,0.0,0.642,0.0,github_strong,8
+MVI,0.03,0.0355,0.0031,0.0,0.0,0.1937,0.0191,github_strong,9
+Depends on context,0.025,0.0,0.0,0.0,0.1667,0.0,0.0,survey_strong,10

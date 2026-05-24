@@ -1,0 +1,9 @@
+indicator,architecture,value
+most_present_on_github,MVVM,2195.0
+most_discussed_on_stackoverflow,MVVM,318.0
+most_used_in_survey,MVVM,13.0
+main_architecture_in_survey,MVVM,8.0
+most_suitable_in_survey,MV,6.0
+highest_alignment_gh_so_survey,Depends on context,1.0
+highest_average_stackoverflow_score,MVVM-C,26.16
+highest_average_github_stars,TCA,25.81

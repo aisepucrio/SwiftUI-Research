@@ -1,0 +1,3528 @@
+answer_id,question_id,body,score,is_accepted,author,created_iso,last_activity_iso,link,matched_arch_keywords
+57835135,57826430,"<p>I've spent the few last hours playing around with the code and I think I've come up with a pretty good way of doing this. I don't know if that's the intended way or if it's proper MVVM but it seems to work and it's actually quite convenient.</p>
+<p>I will post an entire working example below for anyone to try out. It should work out of the box.</p>
+<p>Here are some thoughts (which might be complete garbage, I don't know anything about that stuff yet. Please correct me if I'm wrong :))</p>
+<ul>
+<li><p>I think that <code>view models</code> <strong>probably shouldn't contain or save any actual data from the model</strong>. Doing this would effectively create a copy of what's already saved in the <code>model layer</code>. Having data stored in multiple places causes all kinds of synchronization and update problems you have to consider when changing anything. Everything I tried ended up being a huge, unreadable chunk of ugly code.</p>
+</li>
+<li><p>Using classes for the data structures inside the model doesn't really work well because it makes detecting changes more cumbersome (changing a property doesn't change the object). Thus, I made the <code>Character</code> class a <code>struct</code> instead.</p>
+</li>
+<li><p>I spent hours trying to figure out how to communicate changes between the <code>model layer</code> and the <code>view model</code>. I tried setting up custom publishers, custom subscribers that track any changes and update the view model accordingly, I considered having the <code>model</code> subscribe to the <code>view model</code> as well to establish two-way communication, etc. Nothing worked out. It felt unnatural. <strong>But here's the thing</strong>: The model doesn't have to communicate with the view model. In fact, I think it shouldn't at all. That's probably what MVVM is about. The visualisation shown in an MVVM tutorial on <a href=""http://raywenderlich.com"" rel=""noreferrer"">raywenderlich.com</a> shows this as well:</p>
+</li>
+</ul>
+<p><a href=""https://i.sstatic.net/0VBaq.png"" rel=""noreferrer""><img src=""https://i.sstatic.net/0VBaq.png"" alt=""enter image description here"" /></a>
+(Source: <a href=""https://www.raywenderlich.com/4161005-mvvm-with-combine-tutorial-for-ios"" rel=""noreferrer"">https://www.raywenderlich.com/4161005-mvvm-with-combine-tutorial-for-ios</a>)</p>
+<ul>
+<li><p>That's a one-way connection. The view model reads from the model and maybe makes changes to the data but that's it.</p>
+<p>So instead of having the <code>model</code> tell the <code>view model</code> about any changes, I simply let the <code>view</code> detect changes to the <code>model</code> by making the model an <code>ObservableObject</code>. Every time it changes, the view is being recalculated which calls methods and properties on the <code>view model</code>. The <code>view model</code>, however, simply grabs the current data from the model (as it only accesses and never saves them) and provides it to the view. <strong>The view model simply doesn't have to know whether or not the model has been updated. It doesn't matter</strong>.</p>
+</li>
+<li><p>With that in mind, it wasn't hard to make the example work.</p>
+</li>
+</ul>
+<hr />
+<p>Here's the example app to demonstrate everything. It simply shows a list of all characters while simultaneously displaying a second view that shows a single character.</p>
+<p>Both views are synched when making changes.</p>
+<p><a href=""https://i.sstatic.net/tdHEG.gif"" rel=""noreferrer""><img src=""https://i.sstatic.net/tdHEG.gif"" alt=""enter image description here"" /></a></p>
+<pre class=""lang-swift prettyprint-override""><code>import SwiftUI
+import Combine
+
+/// The model layer.
+/// It's also an Observable object so that swiftUI can easily detect changes to it that trigger any active views to redraw.
+class MyGame: ObservableObject {
+    
+    /// A data object. It should be a struct so that changes can be detected very easily.
+    struct Character: Equatable, Identifiable {
+        var id: String { return name }
+        
+        let name: String
+        var strength: Int
+        
+        static func ==(lhs: Character, rhs: Character) -&gt; Bool {
+            lhs.name == rhs.name &amp;&amp; lhs.strength == rhs.strength
+        }
+        
+        /// Placeholder character used when some data is not available for some reason.
+        public static var placeholder: Character {
+            return Character(name: &quot;Placeholder&quot;, strength: 301)
+        }
+    }
+    
+    /// Array containing all the game's characters.
+    /// Private setter to prevent uncontrolled changes from outside.
+    @Published public private(set) var characters: [Character]
+    
+    init(characters: [Character]) {
+        self.characters = characters
+    }
+    
+    public func update(_ character: Character) {
+        characters = characters.map { $0.name == character.name ? character : $0 }
+    }
+    
+}
+
+/// A View that lists all characters in the game.
+struct CharacterList: View {
+    
+    /// The view model for CharacterList.
+    class ViewModel: ObservableObject {
+        
+        /// The Publisher that SwiftUI uses to track changes to the view model.
+        /// In this example app, you don't need that but in general, you probably have stuff in the view model that can change.
+        let objectWillChange = PassthroughSubject&lt;Void, Never&gt;()
+        
+        /// Reference to the game (the model).
+        private var game: MyGame
+        
+        /// The characters that the CharacterList view should display.
+        /// Important is that the view model should not save any actual data. The model is the &quot;source of truth&quot; and the view model
+        /// simply accesses the data and prepares it for the view if necessary.
+        public var characters: [MyGame.Character] {
+            return game.characters
+        }
+        
+        init(game: MyGame) {
+            self.game = game
+        }
+    }
+    
+    @ObservedObject var viewModel: ViewModel
+    
+    // Tracks what character has been selected by the user. Not important,
+    // just a mechanism to demonstrate updating the model via tapping on a button
+    @Binding var selectedCharacter: MyGame.Character?
+
+    var body: some View {
+        List {
+            ForEach(viewModel.characters) { character in
+                Button(action: {
+                    self.selectedCharacter = character
+                }) {
+                    HStack {
+                        ZStack(alignment: .center) {
+                            Circle()
+                                .frame(width: 60, height: 40)
+                                .foregroundColor(Color(UIColor.secondarySystemBackground))
+                            Text(&quot;\(character.strength)&quot;)
+                        }
+                        
+                        VStack(alignment: .leading) {
+                            Text(&quot;Character&quot;).font(.caption)
+                            Text(character.name).bold()
+                        }
+                        
+                        Spacer()
+                    }
+                }
+                .foregroundColor(Color.primary)
+            }
+        }
+    }
+    
+}
+
+/// Detail view.
+struct CharacterDetail: View {
+
+    /// The view model for CharacterDetail.
+    /// This is intentionally only slightly different to the view model of CharacterList to justify a separate view model class.
+    class ViewModel: ObservableObject {
+        
+        /// The Publisher that SwiftUI uses to track changes to the view model.
+        /// In this example app, you don't need that but in general, you probably have stuff in the view model that can change.
+        let objectWillChange = PassthroughSubject&lt;Void, Never&gt;()
+        
+        /// Reference to the game (the model).
+        private var game: MyGame
+        
+        /// The id of a character (the name, in this case)
+        private var characterId: String
+        
+        /// The characters that the CharacterList view should display.
+        /// This does not have a `didSet { objectWillChange.send() }` observer.
+        public var character: MyGame.Character {
+            game.characters.first(where: { $0.name == characterId }) ?? MyGame.Character.placeholder
+        }
+        
+        init(game: MyGame, characterId: String) {
+            self.game = game
+            self.characterId = characterId
+        }
+        
+        /// Increases the character's strength by one and updates the game accordingly.
+        /// - **Important**: If the view model saved its own copy of the model's data, this would be the point
+        /// where everything goes out of sync. Thus, we're using the methods provided by the model to let it modify its own data.
+        public func increaseCharacterStrength() {
+            
+            // Grab current character and change it
+            var character = self.character
+            character.strength += 1
+            
+            // Tell the model to update the character
+            game.update(character)
+        }
+    }
+    
+    @ObservedObject var viewModel: ViewModel
+    
+    var body: some View {
+        ZStack(alignment: .center) {
+            
+            RoundedRectangle(cornerRadius: 25, style: .continuous)
+                .padding()
+                .foregroundColor(Color(UIColor.secondarySystemBackground))
+            
+            VStack {
+                Text(viewModel.character.name)
+                    .font(.headline)
+                
+                Button(action: {
+                    self.viewModel.increaseCharacterStrength()
+                }) {
+                    ZStack(alignment: .center) {
+                        Circle()
+                            .frame(width: 80, height: 80)
+                            .foregroundColor(Color(UIColor.tertiarySystemBackground))
+                        Text(&quot;\(viewModel.character.strength)&quot;).font(.largeTitle).bold()
+                    }.padding()
+                }
+                
+                Text(&quot;Tap on circle\nto increase number&quot;)
+                .font(.caption)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+            }
+        }
+    }
+    
+}
+
+
+struct WrapperView: View {
+    
+    /// Treat the model layer as an observable object and inject it into the view.
+    /// In this case, I used @EnvironmentObject but you can also use @ObservedObject. Doesn't really matter.
+    /// I just wanted to separate this model layer from everything else, so why not have it be an environment object?
+    @EnvironmentObject var game: MyGame
+    
+    /// The character that the detail view should display. Is nil if no character is selected.
+    @State var showDetailCharacter: MyGame.Character? = nil
+
+    var body: some View {
+        NavigationView {
+            VStack(alignment: .leading) {
+                
+                Text(&quot;Tap on a character to increase its number&quot;)
+                    .padding(.horizontal, nil)
+                    .font(.caption)
+                    .lineLimit(2)
+                
+                CharacterList(viewModel: CharacterList.ViewModel(game: game), selectedCharacter: $showDetailCharacter)
+                
+                if showDetailCharacter != nil {
+                    CharacterDetail(viewModel: CharacterDetail.ViewModel(game: game, characterId: showDetailCharacter!.name))
+                        .frame(height: 300)
+                }
+                
+            }
+            .navigationBarTitle(&quot;Testing MVVM&quot;)
+        }
+    }
+}
+
+struct WrapperView_Previews: PreviewProvider {
+    static var previews: some View {
+        WrapperView()
+        .environmentObject(MyGame(characters: previewCharacters()))
+        .previewDevice(PreviewDevice(rawValue: &quot;iPhone XS&quot;))
+    }
+    
+    static func previewCharacters() -&gt; [MyGame.Character] {
+        let character1 = MyGame.Character(name: &quot;Bob&quot;, strength: 1)
+        let character2 = MyGame.Character(name: &quot;Alice&quot;, strength: 42)
+        let character3 = MyGame.Character(name: &quot;Leonie&quot;, strength: 58)
+        let character4 = MyGame.Character(name: &quot;Jeff&quot;, strength: 95)
+        return [character1, character2, character3, character4]
+    }
+}
+
+</code></pre>
+",15,False,SwiftedMind,2019-09-07T15:32:03+00:00,2019-09-07T15:32:03+00:00,,MVVM
+62994713,62969410,"<p>I think your hypothesis is wrong.</p>
+<blockquote>
+<p>Ideally the model classes should be written as Class not Struct</p>
+</blockquote>
+<p>Make a distinction between model with and without state.</p>
+<p>Model without state should be value type.</p>
+<p>Model with state should be reference type.</p>
+<blockquote>
+<p>The second set of classes we need are views i.e. inherited from View. Undoubtedly these has to be Struct as SwiftUI framework works this way.</p>
+</blockquote>
+<p>Value type cannot be inherited. I also think they are models rather than views.</p>
+<p>E.g.;  <code>struct Model: View {}</code></p>
+<p>They are models, that can be used to build views, hence the View conformance.</p>
+<p>The fact that it is of value type also supports that it's not view. (cannot be inherited)</p>
+<p>Whether your model has state or not, as long as it conforms to View, it can be used to render a view. This is the design of SwiftUI, taking a page from React, IMO. (I personally don't see React ever bothering with MVVM)</p>
+<p>Now since you think Model should be strictly without state, you have a problem.</p>
+<p>You need a reference type object that handles all the state and bridge it to the view.</p>
+<p>You can follow MVVM. In that case you lose most of the SDK support that builds around <code>struct Model: View</code>, e.g.; <code>@State</code>, <code>@StateObject</code>, <code>@EnvironmentObject</code>, and associated automatic binding and safety checks. You would also add at least one reference type for each of the views, and put most of the control / business logic in it. (where else can you put it?)</p>
+<p>So it's in effect a view controller. And you would be doing most of the Control work on a reference type object, without safe guards of immutability. That is on top of all the overheads you would introduce; and since you would pass view model around to be &quot;reusable&quot;, you are going to have all the usual bugs caused by shared reference with implicit states.</p>
+<p>Take my above assessment with a grain of salt, of course.</p>
+<p>Or you can do what official guide do: <code>struct Model: View {}</code> with possible states in it.</p>
+<p>The key here, as SDK requires you to put extra annotation, is that state objects are explicitly identified. E.g.; <code>@StateObject</code>, <code>@ObservableObject</code>. And you have to create reference type objects separate from your model. It essentially cuts out the middle man that is view model.</p>
+<p>I think this is the most difficult thing for MVVM devs to get used to. You no longer need a view model to do what a view model does.</p>
+<p>But shouldn't it be obvious? View model depends on how binding is designed. If SwiftUI has a binding design so efficient, (it does so <em>declaratively</em> without extra object) view model could be automatic.</p>
+<p>SwiftUI removes UIViewController, does that mean you can't have Control?</p>
+<p>I don't see MVC developers come out and create a <code>Controller</code> for every view.</p>
+<p>Same reasoning, you can have MVVM without VM. Design pattern is a <code>@State</code> of mind.</p>
+<p>To summarize:</p>
+<p>I think the best architecture is official SDK. Learn to walk before you run.</p>
+<p>MVVM in legacy sense is an option too. But I think you need to consider the possibility that</p>
+<p>traditional wisdom is not up-to-date with latest SDK.</p>
+",10,True,Jim lai,2020-07-20T11:46:45+00:00,2020-07-20T11:46:45+00:00,,"MVC,MVVM"
+59423788,57826430,"<p>Thanks Quantm for posting an example code above. I followed your example, but simplified a bit. The changes I made:</p>
+
+<ul>
+<li>No need to use Combine</li>
+<li>The only connection between view model and view is the binding SwiftUI provides. eg: use @Published (in view model) and @ObservedObject (in view) pair. We could also use @Published and @EnvironmentObject pair if we want to build bindings across multiple views with the view model.</li>
+</ul>
+
+<p>With these changes, the MVVM setup is pretty straightforward and the two-way communication between the view model and view is all provided by the SwiftUI framework, there is no need to add any additional calls to trigger any update, it all happens automatically. Hope this also helps answer your original question.</p>
+
+<p>Here is the working code that does about the same as your sample code above:</p>
+
+<pre><code>// Character.swift
+import Foundation
+
+class Character: Decodable, Identifiable{
+   let id: Int
+   let name: String
+   var strength: Int
+
+   init(id: Int, name: String, strength: Int) {
+      self.id = id
+      self.name = name
+      self.strength = strength
+   }
+}
+
+// GameModel.swift 
+import Foundation
+
+struct GameModel {
+   var characters: [Character]
+
+   init() {
+      // Now let's add some characters to the game model
+      // Note we could change the GameModel to add/create characters dymanically,
+      // but we want to focus on the communication between view and viewmodel by updating the strength.
+      let bob = Character(id: 1000, name: ""Bob"", strength: 10)
+      let alice = Character(id: 1001, name: ""Alice"", strength: 42)
+      let leonie = Character(id: 1002, name: ""Leonie"", strength: 58)
+      let jeff = Character(id: 1003, name: ""Jeff"", strength: 95)
+      self.characters = [bob, alice, leonie, jeff]
+   }
+
+   func increaseCharacterStrength(id: Int) {
+      let character = characters.first(where: { $0.id == id })!
+      character.strength += 10
+   }
+
+   func selectedCharacter(id: Int) -&gt; Character {
+      return characters.first(where: { $0.id == id })!
+   }
+}
+
+// GameViewModel
+import Foundation
+
+class GameViewModel: ObservableObject {
+   @Published var gameModel: GameModel
+   @Published var selectedCharacterId: Int
+
+   init() {
+      self.gameModel = GameModel()
+      self.selectedCharacterId = 1000
+   }
+
+   func increaseCharacterStrength() {
+      self.gameModel.increaseCharacterStrength(id: self.selectedCharacterId)
+   }
+
+   func selectedCharacter() -&gt; Character {
+      return self.gameModel.selectedCharacter(id: self.selectedCharacterId)
+   }
+}
+
+// GameView.swift
+import SwiftUI
+
+struct GameView: View {
+   @ObservedObject var gameViewModel: GameViewModel
+
+   var body: some View {
+      NavigationView {
+         VStack {
+
+            Text(""Tap on a character to increase its number"")
+               .padding(.horizontal, nil)
+               .font(.caption)
+               .lineLimit(2)
+
+            CharacterList(gameViewModel: self.gameViewModel)
+
+            CharacterDetail(gameViewModel: self.gameViewModel)
+               .frame(height: 300)
+
+         }
+         .navigationBarTitle(""Testing MVVM"")
+      }
+   }
+}
+
+struct GameView_Previews: PreviewProvider {
+    static var previews: some View {
+      GameView(gameViewModel: GameViewModel())
+      .previewDevice(PreviewDevice(rawValue: ""iPhone XS""))
+    }
+}
+
+//CharacterDetail.swift
+import SwiftUI
+
+struct CharacterDetail: View {
+   @ObservedObject var gameViewModel: GameViewModel
+
+   var body: some View {
+      ZStack(alignment: .center) {
+
+         RoundedRectangle(cornerRadius: 25, style: .continuous)
+             .padding()
+             .foregroundColor(Color(UIColor.secondarySystemBackground))
+
+         VStack {
+            Text(self.gameViewModel.selectedCharacter().name)
+               .font(.headline)
+
+            Button(action: {
+               self.gameViewModel.increaseCharacterStrength()
+               self.gameViewModel.objectWillChange.send()
+            }) {
+               ZStack(alignment: .center) {
+                  Circle()
+                      .frame(width: 80, height: 80)
+                      .foregroundColor(Color(UIColor.tertiarySystemBackground))
+                  Text(""\(self.gameViewModel.selectedCharacter().strength)"").font(.largeTitle).bold()
+              }.padding()
+            }
+
+            Text(""Tap on circle\nto increase number"")
+            .font(.caption)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+         }
+      }
+   }
+}
+
+struct CharacterDetail_Previews: PreviewProvider {
+   static var previews: some View {
+      CharacterDetail(gameViewModel: GameViewModel())
+   }
+}
+
+// CharacterList.swift
+import SwiftUI
+
+struct CharacterList: View {
+   @ObservedObject var gameViewModel: GameViewModel
+
+   var body: some View {
+      List {
+         ForEach(gameViewModel.gameModel.characters) { character in
+             Button(action: {
+               self.gameViewModel.selectedCharacterId = character.id
+             }) {
+                 HStack {
+                     ZStack(alignment: .center) {
+                         Circle()
+                             .frame(width: 60, height: 40)
+                             .foregroundColor(Color(UIColor.secondarySystemBackground))
+                         Text(""\(character.strength)"")
+                     }
+
+                     VStack(alignment: .leading) {
+                         Text(""Character"").font(.caption)
+                         Text(character.name).bold()
+                     }
+
+                     Spacer()
+                 }
+             }
+             .foregroundColor(Color.primary)
+         }
+      }
+   }
+}
+
+struct CharacterList_Previews: PreviewProvider {
+   static var previews: some View {
+      CharacterList(gameViewModel: GameViewModel())
+   }
+}
+
+// SceneDelegate.swift (only scene func is provided)
+
+   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+      // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
+      // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
+      // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
+
+      // Use a UIHostingController as window root view controller.
+      if let windowScene = scene as? UIWindowScene {
+         let window = UIWindow(windowScene: windowScene)
+         let gameViewModel = GameViewModel()
+         window.rootViewController = UIHostingController(rootView: GameView(gameViewModel: gameViewModel))
+         self.window = window
+         window.makeKeyAndVisible()
+      }
+   }
+
+</code></pre>
+",7,False,lq_msu,2019-12-20T10:34:34+00:00,2019-12-20T10:57:41+00:00,,MVVM
+69013828,68998373,"<p>I would like to suggest a few improvements to your architecture.</p>
+<blockquote>
+<p>DISCLAIMER:
+Note that the following implementation is a suggestion how to approach the Master-Detail problem. There are countless more approaches and this one is just one of severals which I would suggest.</p>
+</blockquote>
+<p>When things become more complex, you probably would prefer a unidirectional data flow approach between your view model and view. This basically means, <em>no two way bindings</em> to the <em>view state</em>.</p>
+<p>Unidirectional means, that your SwiftUI views deal basically with <em>constant</em> external state which they render without asking. Instead of mutating the backing variable from a two way Binding directly, views send <em>actions</em> (aka events) to the view model. The view model processes theses events and sends out a new view state taking the whole logic into account.</p>
+<p>By the way, this unidirectional data flow is inherent to the MVVM pattern. So, when you use a View Model, you should not use two way bindings that mutate the &quot;View State&quot;. Otherwise this would not be MVVM and using the term View Model would be incorrect or at least confusing.</p>
+<p>The consequence is, that your views will not perform any logic, all logic is delegated to the view model.</p>
+<p>In your Master - Detail problem, this also means, that NavigationLinks will not be directly performed by the Master View. Instead, the fact that a user has tapped the NavigationLink will be send to the view model as an action. The view model then decides, whether to show a detail view, or not, or demands to show an alert, a modal sheet, or what ever it deems necessary what the view has to render.</p>
+<p>Likewise, if the user taps the &quot;back&quot; button, the view will not be immediately popped from the Navigation stack. Instead, the view model receives an action. Again, it decides what to do.</p>
+<p>This approach lets you intercept the data flow at strategically important &quot;locations&quot; and let you handle the situation more easily and in a correct way.</p>
+<p>In a Master-Detail problem, especially in your example where architectural decisions are yet to be made, there is always the question who (which component) is responsible to create a Detail View Model (if required) and which part composes the Detail View and the Detail View Model and dynamically puts this into the view system (somehow) and removes it again when done (if required).</p>
+<p>If we make the proposition, that a View Model should create a Detail View Model, which IMHO is reasonable, and if we further assume, that a user can issue an action that eventually ends up showing a detail view and with the suggestions made before, a possible solution in SwiftUI may look as follows:</p>
+<p>(Note, I will not use your example, but create a new one with more generic names. So, hopefully, you can see where your example maps into my example)</p>
+<p>So, we need these parts</p>
+<ul>
+<li>a master view</li>
+<li>a master view model,</li>
+<li>a detail view</li>
+<li>a detail view model</li>
+<li>possibly additional views for decomposing several aspects and separation of concerns</li>
+</ul>
+<p><strong>The master view:</strong></p>
+<pre><code>struct MasterView: View {
+    let items: [MasterViewModel.Item]
+    let selection: MasterViewModel.Selection?
+    let selectDetail: (_ id: MasterViewModel.Item.ID) -&gt; Void
+    let unselectDetail: () -&gt; Void
+
+    ... 
+</code></pre>
+<p>The master view uses a &quot;state&quot; which is comprised of the items it should draw in a list view. Additionally, it has two action <em>functions</em> <code>selectDetail</code> and <code>unselectDetail</code>. I am pretty sure it is clear, what these mean, but we will see later how they get used by the master view.</p>
+<p>Additionally, we have a <code>Selection</code> property, which is an optional, and you might guess what it means: when it is not nil, it will render the detail view. If it is nil, it does not render a detail view. Pretty easy. Again, hold on where we see how it is used and what it is precisely.</p>
+<p>When we look at the body of the master view, we implement the NavigationLink in a special form, so that we fulfil our unidirectional data flow requirement:</p>
+<pre><code>    var body: some View {
+        List {
+            ForEach(items, id: \.id) { element in
+                NavigationLink(
+                    tag: element.id,
+                    selection: link()) {
+                        if let selection = self.selection {
+                            DetailContainerView(
+                               viewModel: selection.viewModel)
+                        }
+                    } label: {
+                        Text(&quot;\(element.name)&quot;)
+                    }
+            }
+        }
+    }
+</code></pre>
+<p>The NavigationLink uses the &quot;selectable destination&quot; form, whose signature is</p>
+<p><code>init&lt;V&gt;(tag: V, selection: Binding&lt;V?&gt;, destination: () -&gt; Destination, label: () -&gt; Label)</code></p>
+<p>This creates a navigation link that presents the destination view when a bound selection variable equals a given tag value.</p>
+<p>See <a href=""https://developer.apple.com/documentation/swiftui/navigationlink/init(tag:selection:destination:label:)"" rel=""noreferrer"">docs here</a>.</p>
+<p>The <code>tag</code> is the unique id of the item (here <code>element.id</code>).
+The <code>selection</code> parameter, which is a <code>Binding&lt;Item.ID?&gt;</code> is the result of the function <code>link()</code> which will be shown below:</p>
+<pre><code>    func link() -&gt; Binding&lt;MasterViewModel.Item.ID?&gt; {
+        Binding {
+            self.selection?.id
+        } set: { id in
+            print(&quot;link: \(String(describing: id))&quot;)
+            if let id = id {
+                selectDetail(id)
+            } else {
+                unselectDetail()
+            }
+        }
+    }
+</code></pre>
+<p>As you can see, <code>link</code> returns the proper binding. However, one crucial fact you can see here is, that we do not use &quot;two way bindings&quot;. Instead, we route the actions that would mutate the backing variable of the binding to <em>action</em> functions. These actions will eventually be performed by the view model, which we will see later.</p>
+<p>Please note the two action functions:</p>
+<p><code>selectDetail(:)</code> and</p>
+<p><code>unselectDetail()</code></p>
+<p>The getter of the binding works as usual: it just returns the <code>id</code> of the item.</p>
+<p>This above, and the implementation of the two actions are enough to make push and pop from the Navigation stack work.</p>
+<p>Need to edit the items, or pass some data from the Detail View to the Master View?
+Just use this:</p>
+<p><code>unselectDetail(mutatedItem: Item)</code></p>
+<p>and an internal <code>@Sate var item: Items</code> in the Detail View plus logic in the Detail View Controller, or let the master and detail view model communicate to each other (see below).</p>
+<p>With these parts, the Master View is complete.</p>
+<p>But what is this <code>Selection</code> thingy?</p>
+<p>This value will be created by the <em>Master View Model</em>. It is defined as follows:</p>
+<pre><code>    struct Selection: Identifiable {
+        var id: Item.ID
+        var viewModel: DetailViewModel
+    }
+</code></pre>
+<p>So, pretty easy. What's important to note is, that there is a <em>Detail View Model</em>. And since the Master View Model creates this &quot;selection&quot;, it also has to create the detail view model - as our proposition has stated above.</p>
+<p>Here, we make the assumption, that a view model has enough information at hand at the right time to create a fully configured detail (or child) view model.</p>
+<p><strong>The Master View Model</strong></p>
+<p>This view model has a few responsibilities. I will show the code, which should be pretty self-explanatory:</p>
+<pre><code>final class MasterViewModel: ObservableObject {
+
+    struct ViewState {
+        var items: [Item] = []
+        var selection: Selection? = nil
+    }
+
+    struct Item: Identifiable {
+        var id: Int
+        var name: String
+    }
+
+    struct Selection: Identifiable {
+        var id: Item.ID
+        var viewModel: DetailViewModel
+    }
+
+    @Published private(set) var viewState: ViewState
+
+    init(items: [Item]) {
+        self.viewState = .init(items: items, selection: nil)
+    }
+
+    func selectDetail(id: Item.ID) {
+        guard let item = viewState.items.first(where: { id == $0.id } ) else {
+            return
+        }
+        let detailViewModel = DetailViewModel(
+            item: .init(id: item.id,
+                        name: item.name,
+                        description: &quot;description of \(item.name)&quot;,
+                        image: URL(string: &quot;a&quot;)!)
+        )
+        self.viewState.selection = Selection(
+            id: item.id,
+            viewModel: detailViewModel)
+    }
+
+    func unselectDetail() {
+        self.viewState.selection = nil
+    }
+}
+</code></pre>
+<p>So, basically, it has a <code>ViewState</code>, which is precisely the &quot;single source of truth&quot; from the perspective of the <em>view</em> which has to just render this thing, without asking any questions.</p>
+<p>This view state also contains the &quot;Selection&quot; value. Honestly, we may debate whether this is part of the view state or not, but I made it short, and put it into the view state, and thus, the view model only publishes <em>one</em> value, the View State. This makes this implementation more suitable to be refactored into a generic ..., but I don't want to distress.</p>
+<p>Of course, the view model implements the effects of the action functions</p>
+<p><code>selectDetail(:)</code> and <code>unselect()</code>.</p>
+<p>It also has to create the Detail View Model. In this example, it just fakes it.</p>
+<p>There's not much else to do for a Master View Model.</p>
+<p><strong>Detail View</strong></p>
+<p>The detail view is just for demonstration and as short as possible:</p>
+<pre><code>struct DetailView: View {
+    let item: DetailViewModel.Item
+
+    var body: some View {
+        HStack {
+            Text(&quot;\(item.id)&quot;)
+            Text(&quot;\(item.name)&quot;)
+            Text(&quot;\(item.description)&quot;)
+        }
+    }
+}
+</code></pre>
+<p>You may notice, that it uses a <em>constant</em> view state (<code>let item</code>).
+In your example, you may want to have actions, like &quot;save&quot; or something that is performed by the user.</p>
+<p><strong>Detail View Model</strong></p>
+<p>Also, pretty simple. Here, in your problem, you may want to put more logic in which handles the user's actions.</p>
+<pre><code>final class DetailViewModel: ObservableObject {
+
+    struct Item: Identifiable {
+        var id: Int
+        var name: String
+        var description: String
+        var image: URL
+    }
+
+    struct ViewState {
+        var item: Item
+    }
+
+    @Published private(set) var viewState: ViewState
+
+
+    init(item: Item) {
+        self.viewState = .init(item: item)
+    }
+
+}
+</code></pre>
+<p><strong>Caution: over simplification!</strong></p>
+<p>Here, in this example, the two view models don't communicate with each other. In a more practical solution, you may have more complicated things to solve, which involve communication between these view models. You would likely not implement this directly in the View Models, rather implement &quot;Stores&quot; which have Inputs, State, and possibly Outputs, perform their logic using finite state machines, and which can be interconnected so you have a system of &quot;States&quot; which eventually comprise your &quot;AppState&quot; which publishes its state to the view models, which in turn transform this to the view state for their views.</p>
+<p><strong>Wiring up</strong></p>
+<p>Here, some helper views come into play. They just help to wire up the view models with the views:</p>
+<pre><code>struct DetailContainerView: View {
+    @ObservedObject private(set) var viewModel: DetailViewModel
+
+    var body: some View {
+        DetailView(item: viewModel.viewState.item)
+    }
+}
+</code></pre>
+<p>This sets up the view state, BUT ALSO separates the Detail View from the Detail View Model, since the view does not need to know anything about a view model. This makes it more easy to reuse the DetailView as a component.</p>
+<pre><code>struct MasterContainerView: View {
+    @ObservedObject private(set) var viewModel: MasterViewModel
+
+    var body: some View {
+        MasterView(
+            items: viewModel.viewState.items,
+            selection: viewModel.viewState.selection,
+            selectDetail: viewModel.selectDetail(id:),
+            unselectDetail: viewModel.unselectDetail)
+    }
+}
+
+</code></pre>
+<p>Same here, decouple the MasterView from the MasterViewModel and setup actions and view state.</p>
+<p><strong>For your playgrounds:</strong></p>
+<pre><code>struct ContentView: View {
+    @StateObject var viewModel = MasterViewModel(items: [
+        .init(id: 1, name: &quot;John&quot;),
+        .init(id: 2, name: &quot;Bob&quot;),
+        .init(id: 3, name: &quot;Mary&quot;),
+    ])
+
+    var body: some View {
+        NavigationView {
+            MasterContainerView(viewModel: viewModel)
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+import PlaygroundSupport
+PlaygroundPage.current.setLiveView(ContentView())
+
+</code></pre>
+<p>Have fun! ;)</p>
+",7,True,CouchDeveloper,2021-09-01T12:33:13+00:00,2021-09-01T13:04:49+00:00,,MVVM
+74172253,74171322,"<p>I think your code is breaking MVVM, as you're exposing to the view a storage model. In MVVM, your ViewModel should hold only two things:</p>
+<ol>
+<li>Values that your view should display. These values should be automatically updated using a <strong>binding</strong> system (in your case, Combine)</li>
+<li>Events that the view may produce (in your case, a button tap)
+Having that in mind, your ViewModel should <strong>wrap</strong>, <strong>adapt</strong> and <strong>encapsulate</strong> your model. We don't want model changes to affect the view. This is a clean approach that does that:
+View:</li>
+</ol>
+<pre class=""lang-swift prettyprint-override""><code>
+struct ContentView: View {
+    
+    @StateObject // When the view creates the object, it must be a state object, or else it'll be recreated every time the view is recreated
+    private var viewModel = ViewModel()
+    
+    var body: some View {
+        VStack {
+            Text(&quot;\(viewModel.currentNumber)&quot;) // We don't want to use functions here, as that will create a new object , as SwiftUI needs the same reference in order to keep track of changes
+                .padding()
+            Button(&quot;IncreaseNumber&quot;) {
+                viewModel.increaseNumber()
+            }
+        }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
+</code></pre>
+<p>ViewModel:</p>
+<pre class=""lang-swift prettyprint-override""><code>
+class ViewModel: ObservableObject {
+    
+    @Published
+    private(set) var currentNumber: Int = 0 // Private set indicates this should only be mutated by the viewmodel
+    private let numberStorage = NumberStorage()
+    
+    init() {
+        numberStorage.currentNumber
+            .map { $0.number }
+        .assign(to: &amp;$currentNumber) // Here we're binding the current number on the storage to the published var that the view is listening to.`&amp;$` basically assigns it to the publishers address
+    }
+    
+    func increaseNumber() {
+        self.numberStorage.increaseNumber()
+    }
+}
+</code></pre>
+<p>Model:</p>
+<pre class=""lang-swift prettyprint-override""><code>class NumberStorage {
+    private let currentNumberSubject = CurrentValueSubject&lt;NumberObject, Never&gt;(NumberObject())
+
+    var currentNumber: AnyPublisher&lt;NumberObject, Never&gt; {
+        currentNumberSubject.eraseToAnyPublisher()
+    }
+    
+   func increaseNumber() {
+       let currentNumber = currentNumberSubject.value.number
+       currentNumberSubject.send(.init(number: currentNumber + 1))
+    }
+}
+
+
+struct NumberObject: Identifiable { // I'd not use this, just send and int directly
+    let id = UUID()
+    var number = 0
+}
+</code></pre>
+",5,True,Pastre,2022-10-23T15:11:28+00:00,2022-10-23T20:04:09+00:00,,MVVM
+76520224,76519217,"<p>In SwiftUI the <code>View</code> struct is already separate from the UI and the <code>View</code> struct hierarchy should be your primary encapsulation mechanism for view data.</p>
+<p>SwiftUI diffs these structs and creates/updates/removes the UI objects automatically for you, ie it manages the actual view layer or the V in MVC.</p>
+<p>So you can just remove the custom view model object and use the <code>View</code> struct and property wrappers as designed.</p>
+<p><code>@StateObject</code> is for when you want a reference type in a <code>@State</code>, e.g. you are doing something async with lifetime tied to something on screen. It is no longer needed in most cases since we now have async/await via the <code>.task</code> modifier which runs while something is visible and cancels when it dissapears.</p>
+",5,False,malhal,2023-06-21T05:30:27+00:00,2024-07-29T16:36:36+00:00,,MVC
+59550202,57826430,"<p>Short answer is to use @State, whenever state property changes, view is rebuilt.</p>
+
+<p>Long answer is to update MVVM paradigm per SwiftUI.</p>
+
+<p>Typically for something to be a ""view model"", some binding mechanism needs to be associated with it. In your case there's nothing special about it, it is just another object.</p>
+
+<p>The binding provided by SwiftUI comes from value type conforming to View protocol. This set it apart from Android where there's no value type.</p>
+
+<p>MVVM is not about having an object called view model. It's about having model-view binding.</p>
+
+<p>So instead of model -> view model -> view hierarchy, it's now <strong>struct Model: View</strong> with @State inside.</p>
+
+<p>All in one instead of nested 3 level hierarchy. It may go against everything you thought you knew about MVVM. In fact I'd say it's an enhanced MVC architecture.</p>
+
+<p>But binding is there. Whatever benefit you can get from MVVM binding, SwiftUI has it out-of-box. It just presents in an unique form.</p>
+
+<p>As you stated, it would be tedious to do manual binding around view model even with Combine, because SDK deems it not necessary to provide such binding as of yet. (I doubt it ever will, since it's a major improvement over traditional MVVM in its current form)</p>
+
+<p>Semi-pseudo code to illustrate above points:</p>
+
+<pre><code>struct GameModel {
+     // build your model
+}
+struct Game: View {
+     @State var m = GameModel()
+     var body: some View {
+         // access m
+     }
+     // actions
+     func changeCharacter() { // mutate m }
+}
+</code></pre>
+
+<p>Note how simple this is. Nothing beats simplicity. Not even ""MVVM"".</p>
+",4,False,Jim lai,2020-01-01T05:39:58+00:00,2020-01-01T05:39:58+00:00,,"MV,MVC,MVVM"
+71210123,71208265,"<p><code>mutating func</code> is the fix but I thought I'd include some other info below:</p>
+<p>We don't use MVVM with SwiftUI because we don't use classes for transient view state and we don't control the View in the MVVM/MVC sense. SwiftUI creates and updates the real view objects automatically for us, i.e. UILabels, UITableView etc. The SwiftUI <code>View</code> structs are essentially the view model already, so if you were to recreate that as an object not only will you be needlessly make your code more complex but also would introduce object reference bugs SwiftUI is trying to eliminate by using structs. With property wrappers like <code>@State</code> and <code>@Binding</code> SwiftUI is doing some magic to make the struct behave like an object it is not a good idea to ignore that. To make your View structs more testable you can extract related vars into a struct and use mutating funcs like this:</p>
+<pre><code>// View Model
+struct ParkConfig {
+  var numberOfTrees = 0
+  mutating func plantTree() {
+    numberOfTrees += 1
+  }
+}
+
+struct ContentView {
+    @State var parkConfig = ParkConfig()
+
+    var body: some View {
+        ParkView(config: $parkConfig)
+    }
+}
+
+// View
+struct ParkView: View {
+  @Binding var config: ParkConfig
+  var body: some View {
+      Button(&quot;Click Me&quot;) {
+          config.plantTree()
+      }
+  }
+}
+</code></pre>
+<p>You can see Apple demonstrate this pattern in <a href=""https://developer.apple.com/videos/play/wwdc2020/10040/?time=258"" rel=""nofollow noreferrer"">Data Essentials in SwiftUI WWDC 2020</a> at 4:18 where he says &quot;EditorConfig can maintain invariants on its properties and be tested independently. And because EditorConfig is a value type, any change to a property of EditorConfig, like its progress, is visible as a change to EditorConfig itself.&quot;</p>
+",2,False,malhal,2022-02-21T16:54:09+00:00,2023-01-27T20:54:20+00:00,,"MVC,MVVM"
+61480525,61480230,"<p>Actually MVVM means own model for every view, which is updated on model changes, not <em>one</em> model for all views.</p>
+
+<p>So there is no needs to observe <code>viewModel</code> in <code>ParentView</code> as it does not depend on it</p>
+
+<pre><code>struct ParentView: View {
+
+    var viewModel: ViewModel // &lt;&lt; just member to pass down in child
+
+    var body: some View {
+        print(""redrawing ParentView"")
+        return ChildView(viewModel: self.viewModel)
+    }
+}
+</code></pre>
+
+<p>Alternate is to decompose view model so every view has own view sub-model, which would manage updates of own view.</p>
+",0,False,Asperi,2020-04-28T12:46:31+00:00,2020-04-28T12:46:31+00:00,,MVVM
+61693413,61480230,"<p>If all your views observe the same thing, and that thing changes, then all your views will re-render. This is by definition. There's no option to configure to optionally update certain views.</p>
+
+<p>That being said, you can work around it by manipulating what changes you'd like to publish.</p>
+
+<p>E.g.;</p>
+
+<pre><code>class ViewModel: ObservableObject {
+
+    @Published var model = Model(property1: ""this is"", property2: ""a test"")
+    var mytext = ""some text"" // pass this as binding instead of model.propertyX
+}
+</code></pre>
+
+<p>Now when textfield changes, <code>mytext</code> changes, but this change won't be published thus won't trigger further view updates. And you still can access it from view model.</p>
+
+<p>I personally would recommend using <a href=""https://developer.apple.com/documentation/swiftui/state"" rel=""nofollow noreferrer"">@State</a> and <a href=""https://www.hackingwithswift.com/quick-start/swiftui/how-to-use-environmentobject-to-share-data-between-views"" rel=""nofollow noreferrer"">@EnvironmentObject</a> instead of ""view model"". They are the built-in way to handle binding and view updates with tons of safe-guards and supports. </p>
+
+<p>Also you should use value type instead of reference type as much as possible. MVVM from other languages didn't take this into consideration.</p>
+",0,False,Jim lai,2020-05-09T07:46:36+00:00,2020-05-09T07:46:36+00:00,,MVVM
+66439332,58191746,"<p>I've end up giving up with the idea of <code>EnvironmentObject</code> and use a wrapper service with protocol around the singleton of the core data storage.
+I don't think there's other option of doing this if you still want to keep the MVVM principles.</p>
+",0,False,XcodeNOOB,2021-03-02T12:24:48+00:00,2021-03-02T12:24:48+00:00,,MVVM
+79594428,61304700,"<p>I searched for a good working solution and I couldn't find one. So I had to implement the solution myself. So here it is! A working solution for <code>NavigationView</code> which works pre iOS 16!</p>
+<p>I present you the <code>NavigationCoordinator</code>.</p>
+<p>You just write:</p>
+<pre class=""lang-swift prettyprint-override""><code>coordinator.push(.profile)
+</code></pre>
+<p>And <code>NavigationView</code> pushes the <code>ProfileView</code> on to the stack. All you need is to add case profile to <code>enum Screen</code> and add <code>ProfileView()</code> into <code>ScreenView</code>. This way <code>NavigationCoordinator</code> will be able to push <code>ProfileView</code> onto the navigation stack without any more efforts.</p>
+<p>The basic example is:</p>
+<pre class=""lang-swift prettyprint-override""><code>import SwiftUI
+
+@main
+struct NavigationApp: App {
+    @StateObject var coordinator = NavigationCoordinator(rootScreen: .home)
+
+    var body: some Scene {
+        WindowGroup {
+            NavigationView {
+                coordinator.rootView
+            }
+            .environmentObject(coordinator)
+        }
+    }
+}
+</code></pre>
+<p>This is how <code>HomeView</code> looks like:</p>
+<pre class=""lang-swift prettyprint-override""><code>import SwiftUI
+
+struct HomeView: View {
+    @EnvironmentObject private var coordinator: NavigationCoordinator
+    var body: some View {
+        VStack(spacing: 20) {
+            Button(&quot;Go to Profile&quot;) {
+                coordinator.push(.profile)
+            }
+            Button(&quot;Go to Settings&quot;) {
+                coordinator.push(.settings)
+            }
+        }
+        .navigationTitle(&quot;Home&quot;)
+    }
+}
+</code></pre>
+<p><strong>That’s it!</strong> You can now build a complicated hierarchy of navigation in your app. And it is compatible with MVVM approach.</p>
+<p>The demo is available at <a href=""https://github.com/0xMarK/NavigationCoordinator"" rel=""nofollow noreferrer"">https://github.com/0xMarK/NavigationCoordinator</a>.</p>
+<h2>NavigationController alternative</h2>
+<p>Or you can take my <a href=""https://github.com/0xMarK/NavigationController"" rel=""nofollow noreferrer"">alternative version</a> which enables you to specify any <code>View</code> to navigate to inline:</p>
+<pre><code>controller.push(ProfileView())
+</code></pre>
+<p>But this version relies on <code>AnyView</code> which is dangerous. Apple Engineers don’t recommend to use <code>AnyView</code> because it has performance issues and may have other unexpected issues. Use <code>NavigationController</code> variant cautious.</p>
+",0,False,MarK,2025-04-26T21:21:02+00:00,2025-04-26T21:21:02+00:00,,MVVM
+67539836,67538721,"<p>So the first rule of MVVM is that you should ALWAYS separate as much logic from the view as humanly possible. The only logic you should have in the view, is the logic to handle your view itself, nothing more. Everything else should be kept in the ViewModel itself.</p>
+<h3>View</h3>
+<pre><code>struct YourView: View {
+     
+     @ObservedObject yourViewModel = YourViewModel()
+     
+     var body: some View {
+          Text(&quot;Hello, \(yourViewModel.firstName)&quot;)
+     }
+}
+</code></pre>
+<h3>View Model</h3>
+<pre><code>class YourViewModel: ObservableObject {
+     @Published firstName = &quot;John&quot;
+}
+</code></pre>
+<p>This is the basic structure for an MVVM architechture. Inside of your view you'll always reference the viewModel, <code>yourViewModel</code>, and its properties. You can also access them as a binding, eg <code>$yourViewModel.firstName</code> although in this example that won't even compile, but you should get the point there. You should also be looking to expand your view model and clean up some code. Firstly, anytime you have reusable code, make a function.</p>
+<h3>Example Functions</h3>
+<p>Add these functions to your view model.</p>
+<pre><code>func setUserDefaultActivity(activity: [Activity], activityKey: String) {
+    let encoder = JSONEncoder()
+        if let data = try? encoder.encode(activity) {
+            UserDefaults.standard.set(data, forKey: activityKey)  
+        }
+}
+
+func getUserDefaultActivity(activityKey: String) -&gt; [Activity] {
+    if let data = UserDefaults.standard.data(forKey: activityKey) {
+        let decoder = JSONDecoder()
+        if let activity = try? decoder.decode([Activity].self, from: data) {
+             return activity
+        }
+    } else {
+        return []
+    }
+}
+</code></pre>
+<h3>Example Usage</h3>
+<p>Everywhere you can use those created functions.</p>
+<pre><code>//Setting your Defaults
+@Published  var sundayActivities = [Activity]() {
+        didSet {
+            setUserDefaultActivity(sundayActivities, &quot;sunday&quot;)
+        }
+    }
+
+//Retrieving your Defaults
+init() {
+    var activityKeys = [&quot;sunday&quot;, &quot;monday&quot;, &quot;tuesday&quot; /* ... etc */ ]
+    for key in activityKeys {
+         switch key {
+              case &quot;sunday&quot;:
+                  sundayActivities = getUserDefaultActivity(key)
+              case &quot;monday&quot;:
+                  mondayActivities = getUserDefaultActivity(key)
+              case &quot;tuesday&quot;:
+                  tuesdayActivities = getUserDefaultActivity(key)
+              default:
+                  //Continue to add all the days, have a default to cover all cases. 
+         }
+    }
+}
+</code></pre>
+<p>There are a myriad of other ways to accomplish this same task that make it more concise but I don't want to overload you with options. The main takeaway here is that you can clean-up quite a bit of your code and make things much easier to manage. Notice that I accomplished the same thing in my examples in 20 lines vs your 100+ lines. This comes with time and practice, so don't be too distraught, continue to learn and it will come. Regarding your picker, put any and all data related to the views inside of your ViewModel, including your arrays. The only thing on the view should be your reference to your <code>ViewModel</code> itself. Notice in the <code>View Example</code> above, I'm only referencing <code>yourViewModel</code> and the data is kept in the <code>yourViewModel</code> class. That's the separation you need to have. This resource may help some more with understanding of the picker and how it meshes with your View Model.</p>
+<p><a href=""https://stackoverflow.com/questions/57518852/swiftui-picker-onchange-or-equivalent"">SwiftUI Picker onChange or equivalent?</a></p>
+<p>Unfortunately it's still not entirely clear what your problem is. Another bit of advice, particularly on Stack Overflow, is to learn to ask better questions. 9 of 10 times, if you can't find an answer, it's because you're not asking the right question. I promise you, most of a developer's job is to ask the right questions. Good luck!</p>
+",7,True,xTwisteDx,2021-05-14T19:15:37+00:00,2021-05-15T14:34:21+00:00,,MVVM
+57626753,57538431,"<p>We shouldn’t create singletons for the single reason of being an easy way to get global variables, but it doesn’t mean we should never use them. </p>
+
+<p>In your case, if I understood correctly, you are basically creating a service that can be used by the entire application. You could either A) create a reusable class with the networking functions you need (and instantiate anywhere you need it) or B) create a class with a singleton instance in it, that can be easily accessed anywhere. </p>
+
+<p>A singleton would be a better choice if you need to keep some state common to all callers, or if you need to maintain a waiting queue, for example.</p>
+
+<h3>Option A</h3>
+
+<pre><code>class NetworkService {
+
+    init() {
+        // init
+    }
+
+    // Your properties and methods
+    func someFunction() {}
+}
+</code></pre>
+
+<p>Usage in a ViewModel:</p>
+
+<pre><code>let networkService = NetworkService()
+networkService.someFunction()
+</code></pre>
+
+<h3>Option B</h3>
+
+<pre><code>class NetworkService {
+    static let shared = NetworkService()
+    private let queue : Any?
+
+    // Your properties and methods
+    func someFunction() {}
+}
+</code></pre>
+
+<p>Usage:</p>
+
+<pre><code>NetworkService.shared.someFunction()
+</code></pre>
+
+<p>Either way, this is still MVVM. The data is not related to any specific view, nor to a specific model; it's simply a service you would call in any ViewModel that needs it.</p>
+",5,True,rfarias,2019-08-23T12:53:40+00:00,2019-08-23T12:53:40+00:00,,MVVM
+69924499,69923614,"<p>try something like this example code, works well for me:</p>
+<pre><code>struct WeatherModel: Identifiable, Codable {
+    let id = UUID()
+    var name: String = &quot;&quot;
+    var main: CurrentWeather = CurrentWeather()
+    var weather: [WeatherInfo] = []
+    
+    func firstWeatherInfo() -&gt; String {
+        return weather.count &gt; 0 ? weather[0].description : &quot;&quot;
+    }
+}
+
+struct CurrentWeather: Codable {
+    var temp: Float = 0.0
+}
+
+struct WeatherInfo: Codable {
+    var description: String = &quot;&quot;
+}
+
+struct ContentView: View {
+    // Whenever something in the viewmodel changes, the content view will know to update the UI related elements
+    @StateObject var viewModel = WeatherViewModel()
+    @State private var cityName = &quot;&quot;
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                TextField(&quot;Enter City Name&quot;, text: $cityName).textFieldStyle(.roundedBorder)
+                Button(action: {
+                    viewModel.fetchWeather(for: cityName)
+                    cityName = &quot;&quot;
+                }, label: {
+                    Text(&quot;Search&quot;)
+                        .padding(10)
+                        .background(Color.green)
+                        .foregroundColor(Color.white)
+                        .cornerRadius(10)
+                })
+                List {
+                    ForEach(viewModel.cityNameList) { city in
+                        NavigationLink(destination: DetailView(detail: city)) {
+                            HStack {
+                                Text(city.name).font(.system(size: 32))
+                            }
+                        }
+                    }
+                }
+                Spacer()
+            }.navigationTitle(&quot;Weather MVVM&quot;)
+        }.navigationViewStyle(.stack)
+    }
+}
+
+struct DetailView: View {
+    var detail: WeatherModel
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text(detail.name).font(.system(size: 32))
+            Text(&quot;\(detail.main.temp)&quot;).font(.system(size: 44))
+            Text(detail.firstWeatherInfo()).font(.system(size: 24))
+        }
+    }
+}
+
+class WeatherViewModel: ObservableObject {
+    @Published var cityNameList = [WeatherModel]()
+    
+    func fetchWeather(for cityName: String) {
+        guard let url = URL(string: &quot;https://api.openweathermap.org/data/2.5/weather?q=\(cityName)&amp;units=imperial&amp;appid=YOURKEY&quot;) else { return }
+        
+        let task = URLSession.shared.dataTask(with: url) { data, _, error in
+            guard let data = data, error == nil else { return }
+            do {
+                let model = try JSONDecoder().decode(WeatherModel.self, from: data)
+                DispatchQueue.main.async {
+                    self.cityNameList.append(model)
+                }
+            }
+            catch {
+                print(error) // &lt;-- you HAVE TO deal with errors here
+            }
+        }
+        task.resume()
+    }
+}
+</code></pre>
+",3,True,workingdog support Ukraine,2021-11-11T07:19:29+00:00,2021-11-11T07:19:29+00:00,,MVVM
+62948975,62935978,"<blockquote>
+<p>If you only look where you can't go, you might just miss the riches below</p>
+</blockquote>
+<p>Breaking single source of truth, and breaching local (private) property of <code>@StateObject</code>by sharing it via Binding are two places where you can't go.</p>
+<p><code>@EnvironmentObject</code> or more generally the concept of &quot;shared object&quot; between views are the riches below.</p>
+<p>This is an example of doing it without MVVM nonsense:</p>
+<pre><code>import SwiftUI
+
+final class EnvState: ObservableObject {@Published var value: Double = 0 }
+
+struct ContentView: View {
+    @EnvironmentObject var eos: EnvState 
+
+    var body: some View {
+        VStack{
+            ViewA()
+    
+            ViewB()
+        }
+    }
+}
+
+struct ViewA: View {
+    @EnvironmentObject var eos: EnvState 
+
+    var body: some View {
+        Text(&quot;\(eos.value)&quot;).padding()
+    }
+}
+
+struct ViewB: View {
+    @EnvironmentObject var eos: EnvState 
+
+    var body: some View {
+        VStack{
+            Text(&quot;\(eos.value)&quot;)
+        
+            Slider(value: $eos.value, in: 0...1)
+        }
+    }
+}
+</code></pre>
+<p>Isn't this easier to read, cleaner, less error-prone, with fewer overheads, and without serious violation of fundamental coding principles?</p>
+<p>MVVM does not take value type into consideration. And the reason Swift introduces value type is so that you don't pass shared mutable references and create all kinds of bugs.</p>
+<p>Yet the first thing MVVM devs do is to introduce shared mutable references for every view and pass references around via binding...</p>
+<p>Now to your question:</p>
+<blockquote>
+<p>the only options I see are either using only one ViewModel per Model, or having to pass the Model (or it's properties) between ViewModels through Binding</p>
+</blockquote>
+<p>Another option is to drop MVVM, get rid of all view models, and use <code>@EnvironmentObject</code> instead.</p>
+<p>Or if you don't want to drop MVVM, pass <code>@ObservedObject</code> (your view model being a reference type) instead of <code>@Binding</code>.</p>
+<p>E.g.;</p>
+<pre><code>struct ContentView: View {
+    @ObservedObject var viewModelA = ViewModelA()
+
+    var body: some View {
+        VStack{
+            ViewA(value: viewModelA)
+
+            ViewB(value: viewModelA)
+        }
+    }
+}
+</code></pre>
+<p>On a side note, what's the point of &quot;don't access model directly from view&quot;?</p>
+<p>It makes zero sense when your model is value type.</p>
+<p>Especially when you pass view model reference around like cookies in a party so everyone can have it.</p>
+",2,True,Jim lai,2020-07-17T07:16:40+00:00,2020-07-17T07:16:40+00:00,,MVVM
+70962745,70961304,"<p>You are probably unable to find a working solution because it is not a valid approach. In SwiftUI we do not use MVVM pattern of view model objects. The View data structs are already the view model that SwiftUI uses to create and update actual views like UILabels, etc. on the screen. You should also be aware that when you use property wrappers like <code>@State</code> it makes our super efficient View data struct behave like an object, but without the memory hog of an actual heap object. If you create extra objects then you are slowing SwiftUI down and will lose the magic like dependency tracking etc.</p>
+<p>Here is your fixed code:</p>
+<pre><code>import SwiftUI
+
+@main
+struct DIApp: App {
+
+ @StateObject var dataModel = DataModel()
+
+    var body: some Scene {
+        WindowGroup {
+            ListView()
+                .environmentObject(dataModel)
+        }
+    }
+}
+
+struct Item: Identifiable {
+    let id: Int
+    let title: String
+}
+
+class DataModel: ObservableObject {
+    @Published var items = [Item]()
+
+    init() {
+        items.append(Item(id: 1, title: &quot;First Item&quot;))
+        items.append(Item(id: 2, title: &quot;Second Item&quot;))
+        items.append(Item(id: 3, title: &quot;Third Item&quot;))
+    }
+    
+    func addItem(_ item: Item) {
+        items.append(item)
+        print(&quot;DM adding \(item.title)&quot;)
+    }
+}
+
+struct ListView: View {
+
+    @EnvironmentObject private var dataModel: DataModel
+
+    var body: some View {
+        NavigationView {
+            List {
+                // ForEach($dataModel.items) { $item in // if you want write access
+                ForEach(dataModel.items) { item in
+                    Text(item.title)
+                }
+            }
+            .navigationTitle(&quot;List&quot;)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(trailing:
+                Button(action: {
+                    addItem()
+                }) {
+                    Image(systemName: &quot;plus.circle&quot;)
+                }
+            )
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+
+    }
+    
+    func addItem() {
+        let newID = Int.random(in: 100..&lt;999)
+        let newItem = Item(id: newID, title: &quot;New Item \(newID)&quot;)
+
+        dataModel.addItem(newItem)
+        
+    }
+}
+</code></pre>
+",2,False,malhal,2022-02-02T20:56:39+00:00,2022-02-21T21:24:15+00:00,,MVVM
+59550943,58149396,"<p>You can use <code>URLSessionDataTaskPublisher</code> and refactor out networking from all view models.</p>
+
+<p>If you feel some part of the tutorial seems redundant, that is because it is.</p>
+
+<p><strong>MVVM</strong> in such usage is redundant and does not do the job better.</p>
+
+<p>I have a refactored version (networking refactored, all view models removed) of that tutorial if you are interested in details.</p>
+",1,False,Jim lai,2020-01-01T08:12:42+00:00,2020-01-06T15:25:25+00:00,,MVVM
+65487292,65475622,"<p>I wouldn't say that's a good way to use MVVM.</p>
+<p>Instead of storing showDeck in DeckListViewModel, you could just have it as a local @State variable in whatever view you're using it in. Or if you're using a NavigationView, just use a NavigationLink, and there'll be no need for any state variable.</p>
+<pre><code>struct DecksView: View {
+    @ObservedObject var deckListVM = DeckListViewModel()
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                ForEach(deckListVM.decks) { deck in
+                    NavigationLink(destination: DeckDetailView(deckDetailVM: DeckDetailViewModel(deck: deck))) {
+                        // some view
+                    }
+                }
+            }
+        }
+    }
+}
+</code></pre>
+<p>I'm not sure how you implemented your DeckDetailViewModel, just guessing there.</p>
+",1,False,bze12,2020-12-29T04:28:31+00:00,2020-12-29T04:28:31+00:00,,MVVM
+68401306,68370247,"<p>Anyone looking for a way to use MVVM with Firebase Firestore and make your View Model the EnvironmentObject I've added my code below. This project has a list view and a detail view. Each view has a corresponding view model. The project also uses a repository and uses Combine.</p>
+<p>App.swift</p>
+<pre><code>import SwiftUI
+import Firebase
+
+@main
+struct MVVMTestApp: App {
+    
+    @StateObject private var marketplaceViewModel = MarketplaceViewModel(listingRepository: ListingRepository())
+    
+    // Firebase
+    init() {
+        FirebaseApp.configure()
+    }
+        
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(marketplaceViewModel)
+        }
+    }
+}
+</code></pre>
+<p>ContentView.swift</p>
+<pre><code>import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        Group {
+        MarketplaceView()
+        }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
+</code></pre>
+<p>MarketplaceView.swift</p>
+<pre><code>import SwiftUI
+
+struct MarketplaceView: View {
+    @EnvironmentObject var marketplaceViewModel: MarketplaceViewModel
+
+    var body: some View {
+        NavigationView {
+        List {
+            ForEach(self.marketplaceViewModel.listingRowViewModels, id: \.id) { listingRowViewModel in
+                NavigationLink(destination: ListingDetailView(listingDetailViewModel: ListingDetailViewModel(listing: listingRowViewModel.listing))) {
+                    ListingRowView(listingRowViewModel: listingRowViewModel)
+                }
+            } // ForEach
+        } // List
+        .navigationTitle(&quot;Marketplace&quot;)
+        } // NavigationView
+    }
+}
+
+struct MarketplaceView_Previews: PreviewProvider {
+    static var previews: some View {
+        MarketplaceView()
+    }
+}
+</code></pre>
+<p>ListingRowView.swift</p>
+<pre><code>import SwiftUI
+
+struct ListingRowView: View {
+    @ObservedObject var listingRowViewModel: ListingRowViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(listingRowViewModel.listing.name)
+                .font(.headline)
+            Text(String(listingRowViewModel.listing.description))
+                .font(.footnote)
+        }
+    }
+}
+
+struct ListingRowView_Previews: PreviewProvider {
+    static let listingRowViewModel = ListingRowViewModel(listing: testListing1)
+
+    static var previews: some View {
+        ListingRowView(listingRowViewModel: listingRowViewModel)
+    }
+}
+</code></pre>
+<p>ListingDetailView.swift</p>
+<pre><code>import SwiftUI
+
+struct ListingDetailView: View {
+    var listingDetailViewModel: ListingDetailViewModel
+    
+    var body: some View {
+        VStack(spacing: 5) {
+            Text(listingDetailViewModel.listing.name)
+                .font(.headline)
+            Text(String(listingDetailViewModel.listing.description))
+                .font(.footnote)
+        }
+    }
+}
+
+struct ListingDetailView_Previews: PreviewProvider {
+    static let listingDetailViewModel = ListingDetailViewModel(listing: testListing1)
+    
+    static var previews: some View {
+        ListingDetailView(listingDetailViewModel: listingDetailViewModel)
+    }
+}
+</code></pre>
+<p>MarketplaceViewModel.swift</p>
+<pre><code>import Foundation
+import SwiftUI
+import Combine
+
+class MarketplaceViewModel: ObservableObject {
+    var listingRepository: ListingRepository
+    @Published var listingRowViewModels = [ListingRowViewModel]()
+    
+    private var cancellables = Set&lt;AnyCancellable&gt;()
+    
+    init(listingRepository: ListingRepository) {
+        self.listingRepository = listingRepository
+        self.startCombine()
+    }
+    
+    func startCombine() {
+        listingRepository
+            .$listings
+            .receive(on: RunLoop.main)
+            .map { listings in
+                listings.map { listing in
+                    ListingRowViewModel(listing: listing)
+                }
+            }
+            .assign(to: \.listingRowViewModels, on: self)
+            .store(in: &amp;cancellables)
+    }
+}
+</code></pre>
+<p>ListingRowViewModel.swift</p>
+<pre><code>import Foundation
+import SwiftUI
+import Combine
+
+class ListingRowViewModel: ObservableObject {
+    var id: String = &quot;&quot;
+    @Published var listing: Listing
+    
+    private var cancellables = Set&lt;AnyCancellable&gt;()
+    
+    init(listing: Listing) {
+        self.listing = listing
+        
+        $listing
+            .receive(on: RunLoop.main)
+            .compactMap { listing in
+                listing.id
+            }
+            .assign(to: \.id, on: self)
+            .store(in: &amp;cancellables)
+    }
+}
+</code></pre>
+<p>ListingDetailViewModel.swift</p>
+<pre><code>import Foundation
+import SwiftUI
+import Combine
+
+class ListingDetailViewModel: ObservableObject, Identifiable {
+    var listing: Listing
+    
+    init(listing: Listing) {
+        self.listing = listing
+    }
+}
+</code></pre>
+<p>Listing.swift</p>
+<pre><code>import Foundation
+import SwiftUI
+import FirebaseFirestore
+import FirebaseFirestoreSwift
+
+struct Listing: Codable, Identifiable {
+    @DocumentID var id: String?
+    var name: String
+    var description: String
+}
+</code></pre>
+<p>ListingRepository.swift</p>
+<pre><code>import Foundation
+import Firebase
+import FirebaseFirestore
+import FirebaseFirestoreSwift
+
+class ListingRepository: ObservableObject {
+    // MARK: ++++++++++++++++++++++++++++++++++++++ Properties ++++++++++++++++++++++++++++++++++++++
+
+    // Access to Firestore Database
+    let db = Firestore.firestore()
+    
+    @Published var listings = [Listing]()
+    
+    init() {
+        startSnapshotListener()
+    }
+    
+    // MARK: ++++++++++++++++++++++++++++++++++++++ Methods ++++++++++++++++++++++++++++++++++++++
+
+    func startSnapshotListener() {
+        db.collection(&quot;listings&quot;).addSnapshotListener { (querySnapshot, error) in
+            if let error = error {
+                print(&quot;Error getting documents: \(error)&quot;)
+            } else {
+                guard let documents = querySnapshot?.documents else {
+                    print(&quot;No Listings.&quot;)
+                    return
+                }
+                
+                self.listings = documents.compactMap { listing in
+                    do {
+                        return try listing.data(as: Listing.self)
+                    } catch {
+                        print(error)
+                    }
+                    return nil
+                }
+            }
+        }
+    }
+}
+</code></pre>
+",1,False,jonthornham,2021-07-15T22:11:41+00:00,2021-07-15T22:17:26+00:00,,MVVM
+60055700,60055282,"<p>Here is possible approach</p>
+
+<pre><code>class ModelView: ObservableObject {
+    @Published var propertyA: Int = 0
+
+    private var subscribers = Set&lt;AnyCancellable&gt;()
+
+    init(global: AppState) {
+        global.$propertyA
+            .receive(on: RunLoop.main)
+            .assign(to: \.propertyA, on: self)
+            .store(in: &amp;subscribers)
+    }
+}
+</code></pre>
+",0,False,Asperi,2020-02-04T10:47:45+00:00,2020-02-04T10:47:45+00:00,,MV
+75283456,75276952,"<p>Hi it's a bad idea to use MVVM in SwiftUI because Swift is designed to take advantage of fast value types for view data like structs whereas MVVM uses slow objects for view data which leads to the kind of consistency bugs that SwiftUI's use of value types is designed to eliminate. It's a shame so many MVVM UIKit developers (and Harvard lecturers) have tried to push their MVVM garbage onto SwiftUI instead of learning it properly. Fortunately <a href=""https://azamsharp.com/2022/07/17/2022-swiftui-and-mvvm.html"" rel=""nofollow noreferrer"">some of them</a> are changing their ways.</p>
+<p>When learning SwiftUI I believe it's best to learn value semantics first (where any value change to a struct is also a change to the struct itself), then the View struct (i.e. when body is called), then <code>@Binding</code>, then <code>@State</code>. e.g. have a play around with this:</p>
+<pre><code>// use a config struct like this for view data to group related vars
+struct ContentViewConfig {
+   var count = 0 {
+       didSet {
+           // could do validation here, e.g. isValid = count &lt; 10
+       }
+   }
+   // include other vars that are all related, e.g. you could have searchText and searchResults.
+
+   // use mutating func for logic that affects multiple vars
+    mutating func increment() {
+        count += 1
+        //othervar += 1
+    }
+}
+
+struct ContentView: View {
+    @State var config = ContentViewConfig() // normally structs are immutable, but @State makes it mutable like magic, so its like have a view model object right here, but better.
+
+    var body: some View {
+        VStack {
+            ContentView2(count: config.count)
+            ContentView3(config: $config)
+        }
+    }
+}
+
+// when designing a View first ask yourself what data does this need to do its job?
+struct ContentView2: View {
+    let count: Int
+
+    // body is only called if count is different from the last time this was init.
+    var body: some View {
+        Text(count, format: .number)
+    }
+}
+
+struct ContentView3: View {
+    @Binding var config: ContentViewConfig
+
+    var body: some View {
+        Button(action: {
+            config.increment()
+            }) {
+                Text(&quot;Increment&quot;)
+            }
+        }
+    }
+}
+</code></pre>
+<p>Then once you are comfortable with view data you can move on to model data which is when <code>ObservableObject</code> and singletons come into play, e.g.</p>
+<pre><code>struct Item: Identifiable {
+    let id = UUID()
+    var text = &quot;&quot;
+}
+
+class MyStore: ObservableObject {
+    @Published var items: [Item] = []
+
+    static var shared = MyStore()
+    static var preview = MyStore(preview: true)
+
+    init(preview: Bool = false) {
+        if preview {
+            items = [Item(text: &quot;Test Item&quot;)]
+        }
+    }
+}
+
+@main
+struct TestApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(MyStore.shared)
+        }
+    }
+}
+
+struct ContentView: View {
+    @EnvironmentObject store: MyStore
+
+    var body: some View {
+        List($store.items) { $item in
+            TextField(&quot;Item&quot;, $item.text)
+        }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+            .environmentObject(MyStore.preview)
+    }
+}
+
+</code></pre>
+<p>Note we use singletons because it would be dangerous to use <code>@StateObject</code> for model data because its lifetime is tied to something on screen we could accidentally lose all our model data which should have lifetime tied to the app running. Best to think of <code>@StateObject</code> when you need a reference type in a <code>@State</code>, e.g. when working asynchronously on view data when the <code>View</code> struct might be init multiple times and you want to take advantage of the object being <code>deinit</code> when the view disappears for implementing cancellation.</p>
+<p>When it comes to async features like network downloads try the new <code>.task</code> modifier. It has cancellation support built-in and with <code>.task(id:)</code> it will even cancel and restart when the <code>id</code> value changes. Much simpler than implementing these features yourself in an <code>@StateObject</code>.</p>
+",0,False,malhal,2023-01-30T10:59:19+00:00,2023-04-25T09:27:53+00:00,,MVVM
+62964402,61355594,"<p>I diagree with accepted answer. I'll provide my arguments.</p>
+<p>MVVM is NOT about having an object called view model. Most MVVM devs are just doing it for the sake for having an object called view model.</p>
+<blockquote>
+<p>because MVVM about &quot;responsibility separation&quot;</p>
+</blockquote>
+<p>What design pattern is NOT about responsibility separation?</p>
+<p>Why do you think SwiftUI SDK design does not provide responsibility separation?</p>
+<blockquote>
+<p>I must avoid using model code inside a view struct</p>
+</blockquote>
+<p>First view struct is not a view, it's a model that conforms to view.</p>
+<p>E.g.; <code>struct Model: View</code></p>
+<p>This is designed so that you can do model -&gt; view binding (and optionally view -&gt; model binding) easily.</p>
+<p>There are annotations like <code>@State</code>, <code>@StateObject</code> built specifically to support it.</p>
+<p>E.g.; re-renders when <code>@State</code> changes, compiler checks to prevent access <code>@State</code> object from outside <code>struct Model: View</code>.</p>
+<p>In other words, <code>struct Model: View</code> is <em>the</em> place to write model codes! By design!</p>
+<p>Note that it is <code>struct Model</code>, not <code>class Model</code>. MVVM does not take value type into consideration. So instead of taking advantage of the immutability of value type, MVVM has you believe that a separate model in a <strong>reference type</strong> is a good idea? It is not.</p>
+<p>I'm going to say this again. <strong>A model in a REFERENCE type for &quot;responsibility separation&quot;.</strong></p>
+<p>There are legacy reasons that you have to create a separate View Model. It depends on how the binding is designed. It's entirely feasible that you need a separate view model for binding to work in some common language.</p>
+<p>But Swift is not some common language.</p>
+<p>I don't know why MVVM devs think SwiftUI SDK creators are idiots and don't know anything about MVVM. The truth is that, SwiftUI has a binding design so efficient, you don't need a separate view model to describe binding.</p>
+<p>Hell, even I can see that you now have full advantage of binding and automatic view update from value type model, the most iconic MVVM features, without the overheads of manually creating a separate view model. And I'm not a MVVM dev.</p>
+<p>SwiftUI makes view model by default. I've seen attempts of building a view model on top of it times and times again. They all failed miserably, because view model is dead-weight now.</p>
+<p>You don't need it, and in fact you lose SDK support when you use it.</p>
+<p>Or think of it this way. SwiftUI removes UIViewController.</p>
+<p>Do you see MVC developers come out and insist you create a separate Controller object?</p>
+<p>The same argument applies. E.g.;</p>
+<blockquote>
+<p>because MVC is about &quot;responsibility separation&quot;, and provided pattern
+is exactly separates View &amp; Control. Moreover it follows &quot;dependency
+injection&quot; rule as well</p>
+</blockquote>
+<p>Don't let these abstract words confuse you. There are basic principles that apply to everything.</p>
+<p>To your question, it's an inefficient form of MVVM. ChildView should be your model.
+And that is more MVVM than what these MVVM devs told you.</p>
+<p>E.g.;</p>
+<pre><code>struct ChildView: View {
+    @State var value: Value 
+    @StateObject var resource: JSON
+    var body: some View { ... }
+}
+</code></pre>
+",3,False,Jim lai,2020-07-18T03:45:27+00:00,2020-07-18T03:45:27+00:00,,"MVC,MVVM"
+61359092,61355594,"<blockquote>
+  <p>Does this break the rules of MVVM?</p>
+</blockquote>
+
+<p>No, it does not, because MVVM about ""responsibility separation"", and provided pattern is exactly separates View &amp; ViewModel. Moreover it follows ""dependency injection"" rule as well, because you can use and </p>
+
+<p><code>ChildView() // with default model</code></p>
+
+<p>and</p>
+
+<p><code>ChildView(childViewModel: ChildViewModel(...)) // some specific model</code></p>
+",2,True,Asperi,2020-04-22T07:02:07+00:00,2020-04-22T07:02:07+00:00,,MVVM
+61359059,61355594,"<p>This does not violates the MVVM pattern. If your main view needs to pass some parameters to child view it should do so by using init parameters. However, one thing to note is, everytime you navigate to child view from your main view, a new instance of ChilViewModel would be created. In use cases, where this is not acceptable, a view model is created in the parent view and passed on to the child view to maintain the same instance everytime a user navigates to child view. Both do not violate the MVVM pattern. Hope that answers your question. </p>
+",1,False,Ishmeet,2020-04-22T06:59:57+00:00,2020-04-22T06:59:57+00:00,,MVVM
+71066683,71059468,"<p>We don't use MVVM in SwiftUI, SwiftUI is automatically managing the views layer like UILabels on screen etc. for us, we work with the view data in <code>View</code> structs, hence no need for extra view model objects. We also don't use <code>sink</code> in our <code>ObservableObject</code>s we instead <code>assign</code> to <code>@Published</code> which completes the pipleline and ties its life-cycle to the object (no need for cancellables).</p>
+<p>Since you are using async/await in a task you don't even need Combine's <code>ObservableObject</code> anymore and can simply use the <code>.task</code> modifier and set the result on a <code>@State</code>.</p>
+<p>Take a look at <a href=""https://developer.apple.com/documentation/swiftui/view/task(id:priority:_:)"" rel=""nofollow noreferrer"">task(id:priority:)</a> and you'll notice it can re-run the task when ever the id param changes and cancelling previous tasks. It's now as simple as setting result of your await to an <code>@State</code> which can either be the data array or a custom struct containing the data and other related vars.</p>
+<p>We do however use an <code>ObservableObject</code> reference type to manage the life cycle of our value-type model data, i.e. to persist or sync it.</p>
+",1,False,malhal,2022-02-10T14:15:00+00:00,2024-02-20T15:33:48+00:00,,MVVM
+75506979,75495453,"<p>After a couple of days, I realized what I could do.
+No one answered the question, so I solved the problem this way.</p>
+<p>The final solution is below:</p>
+<pre class=""lang-swift prettyprint-override""><code>struct Model: Identifiable, Hashable {
+    var id = UUID()
+    var title: String = &quot;Brand new&quot;
+    var value: String = &quot;&quot;
+    
+    func updateValue() async -&gt; Model {
+        return Model(id: id, title: title, value: &quot;The boar 🐗 is running through the field happily&quot;)
+    }
+}
+
+final class DataModel: ObservableObject {
+    @Published
+    var models: [Model] = [
+        .init(title: &quot;First&quot;, value: &quot;fur&quot;),
+        .init(title: &quot;Second&quot;, value: &quot;meow&quot;),
+        .init(title: &quot;Another&quot;, value: &quot;Make SwiftUI, not war&quot;)
+    ]
+    
+    @MainActor
+    func updateModel(for model: Binding&lt;Model&gt;) async -&gt; Void {
+        model.wrappedValue = await model.wrappedValue.updateValue()
+    }
+    
+    func bindingToModel(_ model: Model.ID) -&gt; Binding&lt;Model&gt; {
+        Binding&lt;Model&gt; {
+            guard let index = self.models.firstIndex(where: { $0.id == model }) else {
+                return Model()
+            }
+            return self.models[index]
+        } set: { newModel in
+            guard let index = self.models.firstIndex(where: { $0.id == model }) else { return }
+            self.models[index] = newModel
+        }
+    }
+}
+
+struct ModelView: View {
+    @StateObject
+    private var dataModel = DataModel()
+    
+    @State
+    private var listSelection: Model.ID?
+    
+    var body: some View {
+        NavigationSplitView {
+            List(dataModel.models, selection: $listSelection) { model in
+                NavigationLink(model.title, value: model.id)
+            }
+        } detail: {
+            if let listSelection, let bindModel = dataModel.bindingToModel(listSelection)  {
+                VStack {
+                    TextField(&quot;Title&quot;, text: bindModel.title)
+                        .padding()
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                        .submitLabel(.go)
+                        .onSubmit {
+                            Task {
+                                // Update Model.value by hit `Go`
+                                await dataModel.updateModel(for: bindModel)
+                            }
+                        }
+                    TextEditor(text: bindModel.value)
+                }
+                .padding()
+                .navigationTitle(bindModel.title)
+            }
+        }
+    }
+}
+</code></pre>
+",1,False,Nick Rossik,2023-02-20T08:42:58+00:00,2023-02-20T08:42:58+00:00,,MV
+71072820,71059468,"<p>I ended up forgetting about trying to use an MVVM workflow. Unfortunately, though I recoded everything and got it pretty close to working, the nested ObservedObjects do not update the view. After quite a bit of research I found several articles stating the same.</p>
+<p>Instead, I decided to follow malhal's suggestion of breaking everything up into separate views, structs, and classes. It's a serious pain the ass, but hopefully it'll make the code a bit easier to work with as things progress.</p>
+<p>I appreciate everyone's input.</p>
+",0,False,kittonian,2022-02-10T22:01:13+00:00,2022-02-10T22:01:13+00:00,,MVVM
+74089458,74079220,"<p>We don't need MVVM in SwiftUI because the <code>View</code> struct is a view model. If you use a view model object instead, you'll have this consistency problem. To make the list update, use <a href=""https://developer.apple.com/documentation/swiftui/fetchrequest"" rel=""nofollow noreferrer""><code>@FetchRequest</code></a> in the <code>View</code> struct.</p>
+<p>FYI <code>FetchRequest</code> is a <code>DynamicProperty</code> struct and gets the <code>Environment</code>'s <code>managedObjectContext</code> in its <code>update</code> func.</p>
+",0,False,malhal,2022-10-16T17:52:15+00:00,2022-10-17T07:58:37+00:00,,MVVM
+76830194,76805145,"<p>There are no delegates or view model objects in SwiftUI the <code>View</code> struct already encapsulates view data that SwiftUI uses to init/deinit/update <code>UIView</code> objects, i.e. the actual V layer, automatically for you, so MVVM is irrelevant.</p>
+<p>For a <code>View</code> struct that recomputes via a timer try <a href=""https://developer.apple.com/documentation/swiftui/timelineview"" rel=""nofollow noreferrer"">TimelineView</a>.</p>
+<blockquote>
+<p><strong>TimelineView</strong> A view that updates according to a schedule that you
+provide.</p>
+<p><strong>Overview</strong> A timeline view acts as a container with no appearance of its
+own. Instead, it redraws the content it contains at scheduled points
+in time</p>
+</blockquote>
+",0,True,malhal,2023-08-03T17:01:16+00:00,2023-08-04T15:54:10+00:00,,MVVM
+71574158,71571783,"<p>We don't need MVVM in SwiftUI, see: <a href=""https://stackoverflow.com/a/60883764/259521"">&quot;MVVM has no place in SwiftUI.&quot;</a></p>
+<p>In SwiftUI, the View struct is already the view model. We use property wrappers like <code>@State</code> and <code>@Binding</code> to make it behave like an object. If you were to actually use objects instead, then you'll face all the bugs and inconsistencies of objects that SwiftUI and its use of value types was designed to eliminate.</p>
+<p>I recommend <a href=""https://developer.apple.com/videos/play/wwdc2020/10040/"" rel=""nofollow noreferrer"">Data Essentials in SwiftUI WWDC 2020</a> for learning SwiftUI. The first half is about view data and the second half is about model data. It takes a few watches to understand it. Pay attention to the part about model your data with value type and manage its life cycle with a reference type.</p>
+<p>It's best to also use structs for your model types. Start with one single <code>ObservableObject</code> to hold the model types (usually arrays of structs) as <code>@Published</code> properties. Use <code>environmentObject</code> to pass the object into the <code>View</code> hierarchy. Use <code>@Binding</code> to pass write access to the structs in the object. Apple's sample <a href=""https://developer.apple.com/tutorials/app-dev-training/getting-started-with-scrumdinger"" rel=""nofollow noreferrer"">ScrumDinger</a> is a good starting point.</p>
+",-2,False,malhal,2022-03-22T14:49:40+00:00,2022-10-16T19:20:18+00:00,,MVVM
+74443738,74443582,"<p>Since <code>@State</code> is a property wrapper, you should do that:</p>
+<pre><code>import SwiftUI
+
+struct Model {
+    let foo: String
+     let bar: URL
+}
+
+struct ModelView: View {
+    @State var model: Model
+
+    init(model: Model) {
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        Text(model.foo)
+    }
+}
+</code></pre>
+",1,True,Morniak,2022-11-15T10:02:54+00:00,2022-11-15T10:02:54+00:00,,MV
+78847178,78846828,"<p>As mentioned, <code>TabView</code> should not be inside a <code>NavigationStack</code>.</p>
+<p>You could try a different approach using a simple <code>HStack</code> and <code>TabView(selection: $selectedModel)</code> to replicate your desired UI.</p>
+<pre><code>struct ContentView: View {
+    @StateObject private var viewModel = ViewModel()
+    
+    @State private var selectedModel: Model?  // &lt;--- here
+    
+    var body: some View {
+        VStack {
+            // --- here
+            HStack {
+                Spacer()
+                Text(&quot;Title&quot;)
+                Spacer()
+                Button(action: {
+                    print(&quot;---&gt; clicked on \(selectedModel?.shortTitle ?? &quot;1&quot;)&quot;)
+                }, label: {
+                    Text(&quot;\(selectedModel?.shortTitle ?? &quot;1&quot;)&quot;)
+                }).padding(8)
+            }
+            TabView(selection: $selectedModel) {  // &lt;--- here
+                ForEach(viewModel.models) { model in
+                    Modelview(model: model).tag(model)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+        }
+    }
+}
+
+struct Modelview: View {
+    var model: Model
+    var body: some View {
+        
+        Rectangle().fill(model.color)
+            .overlay(alignment: .center) {
+                Text(model.title).font(.title).foregroundStyle(.black)
+                    .padding().background(in: .rect, fillStyle:  .init())
+            }
+    }
+}
+
+class ViewModel: ObservableObject {
+    @Published var models: [Model] = []
+    
+    init() {
+        let count = 30
+        var items: [Model] = []
+        for i in 0..&lt;count {
+            items.append(.init(position: i+1))
+        }
+        self.models = items
+    }
+}
+
+struct Model: Identifiable, Hashable {
+    
+    internal init(id: UUID = .init(), position: Int) {
+        self.id = id
+        self.position = position
+        self.color = .red
+    }
+    
+    let id: UUID
+    var position: Int
+    var color: Color
+    var title: String { return &quot;item: \(position)&quot; }
+    var shortTitle: String { return &quot;\(position)&quot; }
+}
+</code></pre>
+",1,False,workingdog support Ukraine,2024-08-08T07:58:16+00:00,2024-08-08T07:58:16+00:00,,MV
+78067632,74484318,"<p><code>@State</code> and <code>@Published</code> serve different purposes in SwiftUI:</p>
+<ul>
+<li><p><code>@State</code>: This property wrapper is used to declare state information within a SwiftUI view. It's typically used for local state within a view, meaning data that is relevant only to that specific view and doesn't need to be shared across multiple views or persisted beyond the lifetime of the view. <code>@State</code> is useful for managing things like whether a button is currently pressed, the current selection in a picker, or whether a modal is presented.</p>
+</li>
+<li><p><code>@Published</code>: This property wrapper is used in conjunction with the ObservableObject protocol to create observable objects. It's commonly used in SwiftUI apps with the MVVM pattern to represent the ViewModel layer. <code>@Published</code> is used to expose properties from the ViewModel that the View observes for changes. When a property marked with @Published changes, it automatically triggers the view to update any affected parts of its UI.</p>
+</li>
+</ul>
+<hr />
+<p>When to use each:</p>
+<ul>
+<li>Use <code>@State</code> for managing simple, view-specific state that doesn't need to be shared with other views or persisted.</li>
+<li>Use <code>@Published</code> within a ViewModel when you have data that needs to be shared across multiple views or needs to persist beyond the lifetime of a single view.</li>
+</ul>
+<p>In summary, @State is used for managing local, view-specific state, while <code>@Published</code> is used for managing shared state and facilitating communication between views and their associated ViewModels.</p>
+<hr />
+<p>So, Example 1 might be considered better if the state is very localized and simple. Example 2 is better if you anticipate needing to share this state with other views or if you prefer to follow a more structured architectural pattern like MVVM.</p>
+",18,True,D&#224;Ch&#250;n,2024-02-27T12:40:27+00:00,2024-02-28T10:32:39+00:00,,MVVM
+73700793,73699204,"<p>Apple addresses this in <a href=""https://developer.apple.com/videos/play/wwdc2020/10040/?time=258"" rel=""nofollow noreferrer"">Data Essentials in SwiftUI WWDC 2020 at 4:18</a></p>
+<blockquote>
+<p>EditorConfig can maintain invariants on its properties and be tested
+independently. And because EditorConfig is a value type, any change to
+a property of EditorConfig, like its progress, is visible as a change
+to EditorConfig itself. 4:18</p>
+</blockquote>
+<p>So in your case it would look like:</p>
+<pre><code>struct MyConfig {
+    var money: String = &quot;&quot;
+    var desc: String = &quot;&quot;
+    var showDatePicker: Bool = false
+    var showingAlert: Bool = false
+    var showConstantlyAlert: Bool = false
+    var showKeyPad: Bool = false
+    var showCatesPanel: Bool = false
+    var selectedCate: String = &quot;&quot;
+
+    mutating func otherLogic() {}
+}
+
+struct MyView {
+
+    @State var config = MyConfig()
+    @FocusState var isDescFieldFocused: Bool
+</code></pre>
+<p>Just to let you know, MVVM (i.e. using objects for view data) is not suitable for SwiftUI because the View struct and property wrappers is equivalent to a view model object but faster and less error-prone. If you use actual objects instead of learning SwiftUI's features you'll have problems.</p>
+<p>The time we use an <code>ObservableObject</code> in SwiftUI is for model data, i.e. the environment object/singleton that stores the arrays of model structs in <code>@Published</code> properties and is responsible for loading/saving/syncing etc. the model data etc. That is covered in the same video later on, from about 9mins 30secs.</p>
+<p>For write-access to model data we use <code>@Binding</code>.</p>
+<p>We used to also use <code>@StateObject</code> when we need a reference type as state, e.g. for async features with lifetime tied to something on screen like networking, but that is pretty much redundant now we have the <code>.task(id:)</code> modifier which achieves the same thing. Because we can simply set the result (or thrown error) of await to an <code>@State</code> and the task will be automatically cancelled when the view disappears (and also cancelled and restarted if an id passed to <code>task(id:)</code> changes). It would take a lot of code and testing to reimplement that behaviour in a <code>@StateObject</code>.</p>
+",3,True,malhal,2022-09-13T09:43:34+00:00,2023-04-25T19:53:02+00:00,,MVVM
+60947602,60946578,"<p>Using MVVM is your choice, apple officially does not recommend to use any design pattern. They have given us below concepts and it truly depends on us how we can use them.</p>
+<p>1- Property wrappers(@State, @Binding, @Environment)</p>
+<p>2- SwiftUI replacement of Storyboards</p>
+<p>3- Combine framework provides a declarative Swift API for processing values over time like RxSwift, RxJava, RxKotlin etc.</p>
+<p>If you want to use MVVM you will still be using all of the above frameworks</p>
+<p><strong>View</strong>: Design and bind the view with SwiftUI.</p>
+<p><strong>ViewModel</strong>: Here you will use @Observable, @Published properties and bind it with View using SwiftUI binding concepts.</p>
+<p><strong>Model</strong>: Here we are using simple data models.</p>
+<p><strong>Network</strong>: Here we will be using Combine framework publisher/subscriber mechanism for handling network streams.</p>
+<p>NOTE:  You can combine all the above concepts and use it in another design pattern like MVP, MVC or VIPER.</p>
+",2,False,Muhammad Waqas Bhati,2020-03-31T09:43:32+00:00,2024-10-21T22:00:01+00:00,,"MVC,MVP,MVVM,VIPER"
+71311059,71310463,"<p>Get rid of the view model objects, we don't use MVVM in SwiftUI. The View data struct is already the model for the actual views on screen e.g. UILabels, UITables etc. that SwiftUI updates for us. We can move related vars and logic into a custom <code>@State</code> struct to make the code more testable however in your case it just looks like this:</p>
+<pre><code>struct NearbyBLEListView: View {
+    @StateObject var bleManager = BLEManager()
+
+    var body: some View {
+        VStack {
+            Text(&quot;BLEs nearby:&quot;)
+            .font(.system(size: 22, weight: .bold, design: .default))
+            .padding()
+            .foregroundColor(.black)           
+            List(bleManager.bleDevices) { ble in
+                HStack {
+                    Text(ble.bleId)
+                }
+            }
+            .navigationTitle(&quot;News&quot;)
+        }
+    }
+}
+</code></pre>
+<p><code>@StateObject</code>s are init when the view appears so you can start scanning inside <code>BLEManager</code>'s init. Also you need the BLEManager to hold your <code>BLEDevice</code> array of structs, e.g.</p>
+<pre><code>class BLEManager: NSObject, ObservableObject {
+    @Published var bleDevices = [BleDevice]()
+</code></pre>
+",2,True,malhal,2022-03-01T15:43:56+00:00,2022-03-01T15:48:59+00:00,,MVVM
+72136965,60946578,"<p>The short answer is: <strong>Yes, You think of this the wrong way</strong>.</p>
+<p>Why ? <code>@State</code> <code>@StateObject</code> usually hold the <strong>source of truth</strong> whereas <code>@Binding</code> <code>@ObservedObject</code> <code>@EnvironmentObject</code> ... act as projected to them. If you take source from other view, be kind, don't try to keep it in your <code>@State</code> or <code>@StateObject</code></p>
+<p>So how does your <code>View</code>/<code>ViewModel</code> control the source of truth from other <code>View</code>/<code>ViewModel</code>? Here are some options:</p>
+<p><strong>1. The safe way:</strong>
+good old <a href=""https://developer.apple.com/documentation/swiftui/environmentobject"" rel=""nofollow noreferrer"">environmentObject</a>. There will be a &quot;god&quot; <code>ObservableObject</code> but hey, as long as it work. If you're inexperienced, just stay with this.</p>
+<pre class=""lang-none prettyprint-override""><code>import SwiftUI
+
+@MainActor class TheAppState: ObservableObject {
+    @Published private(set) var isBlue = true
+    func toggleTheBlue() { isBlue = !isBlue }
+}
+
+struct ColorView: View {
+    @EnvironmentObject var viewModel: TheAppState
+        
+    var body: some View {
+        Rectangle()
+            .foregroundColor(viewModel.isBlue ? .blue : .red)
+            .onTapGesture { viewModel.toggleTheBlue() }
+    }
+    
+}
+
+
+struct TestView: View {
+    @StateObject private var viewModel = TheAppState()
+    
+    var body: some View {
+        VStack {
+            Button(&quot;is\(viewModel.isBlue ? &quot;&quot;: &quot; not&quot;) blue&quot;) { viewModel.toggleTheBlue() }
+            ColorView().environmentObject(viewModel)
+        }
+    }
+}
+
+#Preview { TestView() }
+</code></pre>
+<p>Sharing ViewModel is not MVVM ? You may want to debate to <a href=""https://www.youtube.com/watch?v=w847hVcSYPs"" rel=""nofollow noreferrer"">this man</a> and it should be on another topic. Technically, in this example, the <code>ColorView</code> is not an independent view but a subview of <code>TestView</code>, so it should be fine here.</p>
+<p><strong>2. The improvised way (my recommendation):</strong>
+Utilize <code>closures</code> <code>@Binding</code> <code>@Environment</code>... . This approach allows you to separate your <code>SubViewModel</code>, but it requires adaptation to various scenarios. If you can't separate your <code>View</code> and <code>ViewModel</code> using these tools, your code design are not good enough, you may consider the safe way.</p>
+<pre class=""lang-none prettyprint-override""><code>import SwiftUI
+
+struct ColorView: View {
+    @StateObject private var viewModel: ViewModel = .init()
+    var isBlue: Bool
+    var update: (Bool)-&gt;()
+
+    var body: some View {
+        Rectangle()
+            .fill(isBlue ? Color.blue : .red)
+            .onTapGesture {
+                viewModel.increase()
+                update(viewModel.number % 2 == 0)
+            }
+            .overlay { Text(&quot;change to blue if \(viewModel.number) is even&quot;) }
+            
+    }
+
+    class ViewModel: ObservableObject {
+        @Published private(set) var number = 0
+        func increase() { number += 1 }
+    }
+}
+
+struct TestView: View {
+    @StateObject private var viewModel = ViewModel()
+
+    var body: some View {
+        VStack {
+            Button(&quot;is\(viewModel.isBlue ? &quot;&quot;: &quot; not&quot;) blue&quot;) { viewModel.toggleTheBlue() }
+            ColorView(isBlue: viewModel.isBlue) { viewModel.setTheBlue(value: $0) }
+        }
+    }
+
+    @MainActor class ViewModel: ObservableObject {
+        @Published private(set) var isBlue = true
+        func toggleTheBlue() { isBlue.toggle() }
+        func setTheBlue(value: Bool) { isBlue = value }
+    }
+}
+
+#Preview { TestView() }
+</code></pre>
+<p>Note that in this example, the <code>ColorViewModel</code> doesn't contain <code>isBlue</code>, and the number isn't completely sync with the color. If it did, it would violate the <strong>source of truth</strong> principle, which is bad! Always keep in mind: <strong>never do two way binding between two source of truth</strong></p>
+<p><strong>3. The risky creative:</strong> people ignore the <code>source of truth</code> and force their way, using <code>delegates</code>, <code>publishers</code>, <code>notifications</code>, <code>nested viewmodel</code>, <code>onPreferenceChange</code>...</p>
+<p>For example, this is my latest idea which using <code>onChange</code></p>
+<pre class=""lang-none prettyprint-override""><code>extension View {
+    func linking&lt;T:Equatable&gt;(_ lhs: Binding&lt;T&gt;,_ rhs: Binding&lt;T&gt;) -&gt; some View {
+        modifier(BindingBridge(lhs: lhs, rhs: rhs))
+    }
+}
+
+struct BindingBridge&lt;T: Equatable&gt;: ViewModifier {
+    @Binding var lhs: T
+    @Binding var rhs: T
+    
+    func body(content: Content) -&gt; some View {
+        content
+            .onChange(of: lhs) { if $0 != $1 &amp;&amp; $1 != rhs { rhs = $1 } }
+            .onChange(of: rhs) { if $0 != $1 &amp;&amp; $1 != lhs { lhs = $1 } }
+    }
+}
+</code></pre>
+<p>to use in OP's example:</p>
+<pre class=""lang-none prettyprint-override""><code>struct ColorView: View {
+    @Binding var isBlue: Bool
+    @StateObject private var viewModel: TheBlueViewModel
+
+    init(isBlue: Binding&lt;Bool&gt;) {
+        _isBlue = isBlue
+        _viewModel = .init(wrappedValue: .init(isBlue: isBlue.wrappedValue))
+    }
+
+    var body: some View {
+        Rectangle()
+            .foregroundColor(viewModel.isBlue ? .blue : .red)
+            .onTapGesture { viewModel.toggle() }
+            .linking($isBlue, $viewModel.isBlue)
+    }
+
+}
+
+struct TestView: View {
+    @StateObject private var viewModel = TheBlueViewModel(isBlue: false)
+
+    var body: some View {
+        VStack {
+            Button(&quot;is\(viewModel.isBlue ? &quot;&quot;: &quot; not&quot;) blue&quot;) { viewModel.toggle() }
+            ColorView(isBlue: $viewModel.isBlue)
+        }
+    }
+
+    @MainActor class ViewModel: ObservableObject {
+        @Published var isBlue = true
+    }
+}
+
+class TheBlueViewModel: ObservableObject {
+    @Published var isBlue: Bool
+
+    init(isBlue: Bool) { self.isBlue = isBlue }
+    func toggle() { isBlue.toggle() }
+}
+</code></pre>
+<p><strong>4. The Complex Way:</strong> SwiftUI is not designed for perfect MVVM or any other coding pattern, it's just SwiftUI. So if you want to bend SwiftUI to fit your code pattern safely, it's gonna be complex. As a SwiftUI enthusiast, I do not recommend this approach and will not provide an example here. However, if you are determined to pursue it, you will find the necessary resources eventually.</p>
+",2,False,meomeomeo,2022-05-06T06:19:36+00:00,2024-12-21T00:41:06+00:00,,MVVM
+69910174,69909031,"<p>There are many ways to do what you ask, the following code is just one approach. Since you only need the city name to get the result, just use only that in the url string. Also using your <code>WeatherModel</code> in the <code>WeatherViewModel</code> avoids duplicating the data into various intermediate variables.</p>
+<p>PS: do not post your secret appid key in your url.</p>
+<pre><code>import Foundation
+import SwiftUI
+
+@main
+struct TestApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+struct ContentView: View {
+    @StateObject var viewModel = WeatherViewModel()
+    @State private var cityName = &quot;&quot;  // &lt;-- use this to get the city name
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                TextField(&quot;Enter City Name&quot;, text: $cityName).textFieldStyle(.roundedBorder)
+                
+                Button(action: {
+                    viewModel.fetchWeather(for: cityName) // &lt;-- let the model fetch the results
+                    cityName = &quot;&quot;
+                }, label: {
+                    Text(&quot;Search&quot;)
+                        .padding(10)
+                        .background(Color.green)
+                        .foregroundColor(Color.white)
+                        .cornerRadius(10)
+                })
+                // --- display the results ---
+                Text(viewModel.cityWeather.name).font(.system(size: 32))
+                Text(&quot;\(viewModel.cityWeather.main.temp)&quot;).font(.system(size: 44))
+                Text(viewModel.cityWeather.firstWeatherInfo()).font(.system(size: 24))
+                
+                Spacer()
+            }
+            .navigationTitle(&quot;Weather MVVM&quot;)
+        }.navigationViewStyle(.stack)
+    }
+}
+
+class WeatherViewModel: ObservableObject {
+    // use your WeatherModel that you get from the fetch results
+    @Published var cityWeather: WeatherModel = WeatherModel()
+    
+    func fetchWeather(for cityName: String) {
+        guard let url = URL(string: &quot;https://api.openweathermap.org/data/2.5/weather?q=\(cityName)&amp;units=imperial&amp;appid=YOURKEY&quot;) else { return }
+        
+        let task = URLSession.shared.dataTask(with: url) { data, _, error in
+            guard let data = data, error == nil else { return }
+            do {
+                let model = try JSONDecoder().decode(WeatherModel.self, from: data)
+                DispatchQueue.main.async {
+                    self.cityWeather = model
+                }
+            }
+            catch {
+                print(error) // &lt;-- need to deal with errors here
+            }
+        }
+        task.resume()
+    }
+    
+}
+
+struct WeatherModel: Codable {
+    var name: String = &quot;&quot;
+    var main: CurrentWeather = CurrentWeather()
+    var weather: [WeatherInfo] = []
+    
+    func firstWeatherInfo() -&gt; String {
+        return weather.count &gt; 0 ? weather[0].description : &quot;&quot;
+    }
+}
+
+struct CurrentWeather: Codable {
+    var temp: Float = 0.0
+}
+
+struct WeatherInfo: Codable {
+    var description: String = &quot;&quot;
+}
+</code></pre>
+",1,True,workingdog support Ukraine,2021-11-10T08:48:15+00:00,2021-11-10T10:30:41+00:00,,MVVM
+70407577,70404218,"<p>Some things to note.</p>
+<p>You can't chain <code>ObservableObject</code>s so <code>@ObservedObject var viewModel = BeersListViewModel()</code> inside the <code>class</code> won't work.</p>
+<p>The second you have 2 ViewModels one in the <code>View</code> and one in the <code>Presenter</code> you have to pick one. One will not know what the other is doing.</p>
+<p>Below is how to get your code working</p>
+<pre><code>import SwiftUI
+struct Beer: Identifiable{
+    var id: UUID = UUID()
+    var name: String = &quot;Hops&quot;
+    var abv: String = &quot;H&quot;
+}
+protocol BeersListInteractorProtocol{
+    func loadList(at: Int, completion: ([Beer])-&gt;Void)
+}
+
+struct BeersListInteractor: BeersListInteractorProtocol{
+    func loadList(at: Int, completion: ([Beer]) -&gt; Void) {
+        completion([Beer(), Beer(), Beer()])
+    }
+}
+protocol BeersListPresenterProtocol: ObservableObject{
+    var interactor: BeersListInteractorProtocol { get set }
+    var viewModel : BeersListViewModel { get set }
+    
+    func formattedABV(_ abv: String) -&gt; String
+    func loadList(at page: Int)
+}
+class BeersListPresenter: BeersListPresenterProtocol, ObservableObject{
+    var interactor: BeersListInteractorProtocol
+    //You can't chain `ObservedObject`s
+    @Published var viewModel = BeersListViewModel()
+    
+    init(interactor: BeersListInteractorProtocol){
+        self.interactor = interactor
+        
+    }
+    func loadList(at page: Int){
+        interactor.loadList(at: page) { beers in
+            DispatchQueue.main.async {
+                self.viewModel.beers.append(contentsOf: beers)
+                print(self.viewModel.beers)
+            }
+        }
+    }
+    func formattedABV(_ abv: String) -&gt; String{
+        &quot;**\(abv)**&quot;
+    }
+}
+
+//Change to struct
+struct BeersListViewModel{
+    var beers = [Beer]()
+}
+
+
+struct BeerListView&lt;T: BeersListPresenterProtocol&gt;: View{
+    //This is what will trigger view updates
+    @StateObject var presenter : T
+    //The viewModel is in the Presenter
+    //@StateObject var viewModel : BeersListViewModel
+    var body: some View {
+        NavigationView{
+            List{
+                Button(&quot;load list&quot;, action: {
+                    presenter.loadList(at: 1)
+                })
+                ForEach(presenter.viewModel.beers, id: \.id){ beer in
+                    HStack{
+                        VStack(alignment: .leading){
+                            Text(beer.name)
+                                .font(.headline)
+                            Text(&quot;Vol: \(presenter.formattedABV(beer.abv))&quot;)
+                                .font(.subheadline)
+                            
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+struct BeerListView_Previews: PreviewProvider {
+    static var previews: some View {
+        BeerListView(presenter: BeersListPresenter(interactor: BeersListInteractor()))
+    }
+}
+</code></pre>
+<p>Now I am not a VIPER expert by any means but I think you are mixing concepts. Mixing MVVM and VIPER.Because in VIPER the <code>presenter</code> Exists below the View/ViewModel, NOT at an equal level.</p>
+<p>I found <a href=""https://medium.com/@smalam119/viper-design-pattern-for-ios-application-development-7a9703902af6"" rel=""nofollow noreferrer"">this</a> tutorial a while ago. It is for UIKit but if we use an <code>ObservableObject</code> as a replacement for the <code>UIViewController</code> and the SwiftUI <code>View</code> serves as the storyboard.</p>
+<p>It makes both the <code>ViewModel</code> that is an <code>ObservableObject</code> and the <code>View</code> that is a SwiftUI <code>struct</code> a single <code>View</code> layer in terms of VIPER.</p>
+<p>You would get code that looks like this</p>
+<pre><code>protocol BeersListPresenterProtocol{
+    var interactor: BeersListInteractorProtocol { get set }
+    
+    func formattedABV(_ abv: String) -&gt; String
+    func loadList(at: Int, completion: ([Beer]) -&gt; Void)
+    
+}
+struct BeersListPresenter: BeersListPresenterProtocol{
+    var interactor: BeersListInteractorProtocol
+    
+    init(interactor: BeersListInteractorProtocol){
+        self.interactor = interactor
+        
+    }
+    func loadList(at: Int, completion: ([Beer]) -&gt; Void) {
+        
+        interactor.loadList(at: at) { beers in
+            completion(beers)
+        }
+    }
+    func formattedABV(_ abv: String) -&gt; String{
+        &quot;**\(abv)**&quot;
+    }
+}
+protocol BeersListViewProtocol: ObservableObject{
+    var presenter: BeersListPresenterProtocol { get set }
+    var beers: [Beer] { get set }
+    func loadList(at: Int)
+    func formattedABV(_ abv: String) -&gt; String
+    
+}
+class BeersListViewModel: BeersListViewProtocol{
+    @Published var presenter: BeersListPresenterProtocol
+    @Published var beers: [Beer] = []
+    
+    init(presenter: BeersListPresenterProtocol){
+        self.presenter = presenter
+    }
+    func loadList(at: Int) {
+        DispatchQueue.main.async {
+            self.presenter.loadList(at: at, completion: {beers in
+                self.beers = beers
+            })
+        }
+    }
+    
+    func formattedABV(_ abv: String) -&gt; String {
+        presenter.formattedABV(abv)
+    }
+}
+struct BeerListView&lt;T: BeersListViewProtocol&gt;: View{
+    @StateObject var viewModel : T
+    
+    var body: some View {
+        NavigationView{
+            List{
+                Button(&quot;load list&quot;, action: {
+                    viewModel.loadList(at: 1)
+                })
+                ForEach(viewModel.beers, id: \.id){ beer in
+                    HStack{
+                        VStack(alignment: .leading){
+                            Text(beer.name)
+                                .font(.headline)
+                            Text(&quot;Vol: \(viewModel.formattedABV(beer.abv))&quot;)
+                                .font(.subheadline)
+                            
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+struct BeerListView_Previews: PreviewProvider {
+    static var previews: some View {
+        BeerListView(viewModel: BeersListViewModel(presenter: BeersListPresenter(interactor: BeersListInteractor())))
+    }
+}
+</code></pre>
+<p>If you don't want to separate the VIPER View Layer into the <code>ViewModel</code> and the <code>SwiftUI</code> <code>View</code> you can opt to do something like the code below but it makes it harder to replace the UI and is generally not a good practice. Because you WON'T be able to call methods from the <code>presenter</code> when there are updates from the <code>interactor</code>.</p>
+<pre><code>struct BeerListView&lt;T: BeersListPresenterProtocol&gt;: View, BeersListViewProtocol{
+    var presenter: BeersListPresenterProtocol
+    @State var beers: [Beer] = []
+    
+    var body: some View {
+        NavigationView{
+            List{
+                Button(&quot;load list&quot;, action: {
+                    loadList(at: 1)
+                })
+                ForEach(beers, id: \.id){ beer in
+                    HStack{
+                        VStack(alignment: .leading){
+                            Text(beer.name)
+                                .font(.headline)
+                            Text(&quot;Vol: \(formattedABV(beer.abv))&quot;)
+                                .font(.subheadline)
+                            
+                        }
+                    }
+                }
+            }
+        }
+    }
+    func loadList(at: Int) {
+        DispatchQueue.main.async {
+            self.presenter.loadList(at: at, completion: {beers in
+                self.beers = beers
+            })
+        }
+    }
+    
+    func formattedABV(_ abv: String) -&gt; String {
+        presenter.formattedABV(abv)
+    }
+}
+struct BeerListView_Previews: PreviewProvider {
+    static var previews: some View {
+        BeerListView&lt;BeersListPresenter&gt;(presenter: BeersListPresenter(interactor: BeersListInteractor()))
+    }
+}
+</code></pre>
+",1,True,lorem ipsum,2021-12-18T22:17:22+00:00,2021-12-21T13:09:20+00:00,,"MVVM,VIPER"
+75434625,75432108,"<p>Couple of mistakes:</p>
+<ol>
+<li><code>ForEach</code> is a <code>View</code>, not a loop, if you attempt to use it with indices it will crash when you access an array by index in its closure. In the case of value types you need to supply the <code>ForEach</code> with an <code>id</code> which needs to be a property of the data that is a unique identifier. Or the data can implement <code>Identifiable</code>. However, in the case of objects like in Core Data, it will automatically use the object's pointer as its <code>id</code>, which works because the managed object context ensures there is only one instance of an object that represents a record. So what this all means is you can use <code>ForEach</code> with the array of objects.</li>
+<li>We don't need MVVM in SwiftUI because the <code>View</code> struct is already the view model and the property wrappers make it behave like a view model object. Using <code>@StateObject</code> to implement a view model will cause some major issues because state is designed to be a source of truth whereas a traditional view model object is not. <code>@StateObject</code> is designed for when you need a reference type in an <code>@State</code> source of truth, i.e. doing something async with a lifetime you want to associate with something on screen.</li>
+</ol>
+<p>The property wrapper for Core Data is <code>@FetchRequest</code> or <code>@SectionedFetchRequest</code>. If you create an app project in Xcode with core data checked the template will demonstrate how to use it.</p>
+",0,False,malhal,2023-02-13T10:24:53+00:00,2023-02-13T10:24:53+00:00,,MVVM
+78756785,78756289,"<p>Regarding your self-answers: don't overcomplicate the matter.</p>
+<p>Instead, keep these simple rules in mind:</p>
+<ol>
+<li><strong>A view should be simply a <em>function of state</em>.</strong></li>
+</ol>
+<p>So, what does that mean? Well, the view renders what ever state (or better <em>view state</em>) it has been provided – here, from your View Model. The view state is just a composition of trivial data that <em>precisely</em> represents every aspect of your view.</p>
+<p>So, in your case, &quot;precisely&quot; means, that the view state contains information whether a card is flipped or not. Remember, the view just renders exactly what the view state is: <code>view = f(view_state)</code>.</p>
+<ol start=""2"">
+<li><strong>A View should not mutate its state</strong></li>
+</ol>
+<p>This is a consequence form #1, just emphasising it. ;)</p>
+<ol start=""3"">
+<li><strong>A View sends <em>Commands</em> to the View Model</strong></li>
+</ol>
+<p>A command is any user intent, for example a button tap, or something that happens in the view, for example &quot;on appear&quot;.</p>
+<p>One can model all commands in this system with an enum, for example:</p>
+<pre><code>enum Event {
+    case onAppear
+    case cardTapped(id: CardID)
+}
+</code></pre>
+<p>Now, the View Model is the <em>computational model</em> which computes a new view state based on the current view state and an event.
+The computational model can be expressed with a function:</p>
+<p><code>(State, Event) -&gt; State</code></p>
+<p>This may implement your presentation logic, or if you want also business logic.</p>
+<p>This computational model can be easily extended to call any service functions:</p>
+<p><code>(State, Event) -&gt; (State, [ServiceFunction])</code></p>
+<p>Where <code>ServiceFunction</code> is a struct which contains a function which will be called in your ViewModel implementation. This represents the &quot;Model&quot; in the MVVM pattern.</p>
+<p>Note, that it is a very simple, yet powerful approach. It can be used to implement any MV** pattern and also ELM, Redux, TCA, and potentially more.</p>
+<p>So, in order to implement an MVVM pattern, first identify the &quot;view state&quot;. Note, it <em>exactly</em> models your view, using only trivial data types. You can end up with either an enum (modelling different &quot;modes&quot; of your view), or a struct.</p>
+<p>Then identify the events that can happen in this use case. One can model it with an enum. Probably the easiest part.</p>
+<p>Regarding implementing the View Model. Well, it might become an Observable - this a class, which should also be confined to the main thread, i.e. make it a <code>@MainActor</code>. Basically it would suffice to implement the function mentioned above. Actually it will only be a few lines of code, and it will usually be very generic (actually, it can be a generic class, with State and Event as type parameter).</p>
+<p>It's also possible to implement the function and the associated state only utilising SwiftUI. So, the &quot;View Model&quot; will be implemented with a SwiftUI view.</p>
+<p>The above pattern will more or less enforce you to get an event driven, unidirectional approach. It deliberately does not allow to use two-way bindings, where a view actually can mutate its state, which would violate rule #1.</p>
+<p>I don't want to suggest, how to implement a view model. But, in my opinionated preferred way, my View Model is a generic class, with type parameters <code>State</code> and <code>Event</code>. It uses a state machine, and pretty much directly implements the above function, which is a combination of the <em>transition</em> function and an <em>output</em> function from a Finite State Machine. This View Model can also handle and manage &quot;tasks&quot;, i.e. it can call function which creates Tasks and can also cancel them. These tasks usually have &quot;side effects&quot; - i.e. calling a backend. These tasks may also emit one or several events which then get fed back into the system. The whole machinery can also be implemented within SwiftUI view - so no Observable, just SwiftUI.</p>
+<p>If we would find a protocol for a view model, it would just be:</p>
+<pre><code>protocol ViewModel {
+    associatedtype State
+    associatedtype Event
+
+    var state { get }
+    func send(_ event: Event)
+}
+</code></pre>
+<p>For a conforming view model, the state is observable. The generic initialisers receive the transition function and the initial state.</p>
+<p>Hope this helps ;)</p>
+",0,False,CouchDeveloper,2024-07-16T21:20:42+00:00,2024-07-16T21:42:49+00:00,,"MV,MVVM,TCA"
+74293677,74268634,"<p>There is no need for MVVM in SwiftUI because the <code>View</code> struct plus property wrappers is already equivalent to a view model object but faster and less error prone. Also in SwiftUI we don't even have access to the traditional view layer - it takes our <code>View</code> data structs, diffs them to create/update/remove <code>UIView</code>/<code>NSView</code> objects, using the best ones for the platform/context. If you use an object for view data instead, then you'll just have the same consistency problems that SwiftUI was designed to eliminate.</p>
+<p>Sadly the web (and Harvard University) is filled with MVVM SwiftUI articles by people that didn't bother to learn it properly. Fortunately things are changing:</p>
+<p><a href=""https://azamsharp.com/2022/07/17/2022-swiftui-and-mvvm.html"" rel=""nofollow noreferrer"">I was wrong! MVVM is NOT a good choice for building SwiftUI applications (Azam Sharp)</a></p>
+<p><a href=""https://swift2931.medium.com/how-mvvm-devs-get-mvvm-wrong-in-swiftui-a937a4268483"" rel=""nofollow noreferrer"">How MVVM devs get MVVM wrong in SwiftUI: From view model to state (Jim Lai)</a></p>
+<p><a href=""https://developer.apple.com/forums/thread/699003"" rel=""nofollow noreferrer"">Stop using MVVM for SwiftUI (Apple Developer Forums)</a></p>
+",3,False,malhal,2022-11-02T17:53:30+00:00,2022-12-26T14:18:27+00:00,,MVVM
+71917828,71914981,"<p>For a cutting edge way to wrap the <code>NSFetchedResultsController</code> in SwiftUI compatible code you might want to take a look at <a href=""https://developer.apple.com/documentation/swift/asyncstream"" rel=""nofollow noreferrer"">AsyncStream</a>.</p>
+<p>However, <code>@FetchRequest</code> currently is implemented as a <code>DynamicProperty</code> so if you did that too it would allow access the managed object context from the <code>@Environment</code> in the <code>update</code> func which is called on the <code>DynamicProperty</code> before <code>body</code> is called on the <code>View</code>. You can use an <code>@StateObject</code> internally as the FRC delegate.</p>
+<p>Be careful with MVVM because it uses objects where as SwiftUI is designed to work with value types to eliminate the kinds of consistency bugs you can get with objects. See the doc <a href=""https://developer.apple.com/documentation/swift/choosing_between_structures_and_classes"" rel=""nofollow noreferrer"">Choosing Between Structures and Classes</a>. If you build an MVVM object layer on top of SwiftUI you risk reintroducing those bugs. You're better off using the <code>View</code> data struct as it's designed and leave MVVM for when coding legacy view controllers. But to be perfectly honest, if you learn the child view controller pattern and understand the responder chain then there is really no need for MVVM view model objects at all.</p>
+<p>And FYI, when using Combine's <code>ObservableObject</code> we don't <code>sink</code> the pipeline or use <code>cancellables</code>. Instead, <a href=""https://developer.apple.com/documentation/combine/publisher/assign(to:)"" rel=""nofollow noreferrer""><code>assign</code></a> the output of the pipeline to an <code>@Published</code>. However, if you aren't using <a href=""https://developer.apple.com/documentation/combine/publishers/combinelatest"" rel=""nofollow noreferrer""><code>CombineLatest</code></a>, then perhaps reconsider if you should really be using Combine at all.</p>
+",2,True,malhal,2022-04-18T22:49:55+00:00,2022-05-30T11:28:13+00:00,,MVVM
+74807197,74806160,"<p>You are missing the <em>model</em> part of MVVM.  In a simple example, as you have here, you probably don't need full MVVM - You can just share a <em>view model</em> between your two views.</p>
+<p>However, here is how you can use a model and a view model. The model and view model classes first:</p>
+<p>The model just declares two <code>@Published</code> properties and is an <code>@ObservableObject</code></p>
+<p><strong>Model</strong></p>
+<pre><code>class Model: ObservableObject {
+    
+    @Published var firstName: String = &quot;&quot;
+    @Published var lastName: String = &quot;&quot;
+    
+}
+</code></pre>
+<p>The <code>ContentViewModel</code> is initialised with the <code>Model</code> instance and simply exposes the two properties of the model via computed properties.</p>
+<p><strong>ContentViewModel</strong></p>
+<pre><code>class ContentViewModel {
+    
+    let model: Model
+    
+    var firstName:String {
+        return model.firstName
+    }
+    var lastName:String {
+        return model.lastName
+    }
+    
+    init(model: Model) {
+        self.model = model
+    }
+    
+}
+</code></pre>
+<p><code>ChangeMeViewModel</code> is a little more complex - It needs to both expose the current values from the <code>Model</code> but also update the values in the <code>Model</code> when the values are set in the <code>ChangeMeViewModel</code>.  To make this happen we use a custom <code>Binding</code>. The <code>get</code> methods are much the same as the <code>ContentViewModel</code> - They just accesses the properties from the <code>Model</code> instance.  The <code>set</code> method takes the new value that has been assigned to the <code>Binding</code> and updates the properties in the <code>Model</code></p>
+<p><strong>ChangeMeViewModel</strong></p>
+<pre><code>class ChangeMeViewModel {
+    
+    let model: Model
+    
+    var firstName: Binding&lt;String&gt;
+    var lastName: Binding&lt;String&gt;
+    
+    init(model: Model) {
+        self.model = model
+        self.firstName = Binding(
+            get: {
+                return model.firstName
+            },
+            set: { newValue in
+                model.firstName = newValue
+            }
+        )
+        
+        self.lastName = Binding(
+            get: {
+                return model.lastName
+            },
+            set: { newValue in
+                model.lastName = newValue
+            }
+        )
+    }
+    
+}
+</code></pre>
+<p>Finally we need to create the <code>Model</code> in the <code>App</code> file and use it with the view models in the view hierarchy:</p>
+<p><strong>App</strong></p>
+<pre><code>@main
+struct MVVMApp: App {
+    @StateObject var model = Model()
+    var body: some Scene {
+        WindowGroup {
+            ContentView(viewModel: ContentViewModel(model: model))
+        }
+    }
+}
+</code></pre>
+<p><strong>ContentView</strong></p>
+<pre><code>struct ContentView: View {
+    
+    let viewModel: ContentViewModel
+    
+    var body: some View {
+        VStack {
+            Text(&quot;first name: \(self.viewModel.firstName)&quot;)
+            Text(&quot;last name: \(self.viewModel.lastName)&quot;)
+            
+            ChangeMeView(viewModel:ChangeMeViewModel(model:self.viewModel.model))
+        }
+    }
+}
+</code></pre>
+<p><strong>ChangeMeView</strong></p>
+<pre><code>struct ChangeMeView: View {
+    
+    let viewModel: ChangeMeViewModel
+    
+    var body: some View {
+        VStack {
+            TextField(&quot;first name&quot;, text: self.viewModel.firstName)
+            TextField(&quot;last name&quot;, text: self.viewModel.lastName)
+        }
+    }
+}
+</code></pre>
+",2,True,Paulw11,2022-12-15T05:37:01+00:00,2022-12-16T00:03:31+00:00,,MVVM
+62739406,62655457,"<p>Providing an alternative answer here with some changes to your design as a comparison.</p>
+<ol>
+<li><p>The shared state here is the user object. Put it in <code>@EnvironmentObject</code>, which is by definition the external state object shared by views in the hierarchy. This way you don't need to notify StoreA which notifies RootStore which then notifies StoreB.</p>
+</li>
+<li><p>Then StoreA, StoreB can be local <code>@State</code>, and RootStore is not required. Store A, B can be value types since there's nothing to observe.</p>
+</li>
+<li><p>Since <code>@EnvironmentObject</code> is by definition an ObservableObject, we don't need <code>User</code> to
+conform to ObservableObject, and can thus make <code>User</code> a value type.</p>
+<pre><code> final class EOState: ObservableObject {
+
+     @Published var user = User()
+
+ }
+
+ struct ViewA: View {
+     @EnvironmentObject eos: EOState
+     @State storeA = StoreA()
+     // ... TextField(&quot;First name&quot;, text: $eos.user.firstname)
+ }
+
+ struct ViewB: View {
+     @EnvironmentObject eos: EOState
+     @State storeB = StoreB()
+     // ... Text(&quot;\(eos.user.firstname)&quot;)
+ }
+</code></pre>
+</li>
+</ol>
+<p>The rest should be straight-forward.</p>
+<p>What is the take-away in this comparison?</p>
+<ol>
+<li><p>Should avoid objects observing each other, or a long publish chain. It's confusing, hard to track, and not scalable.</p>
+</li>
+<li><p>MVVM tells you nothing about managing state. SwiftUI is most powerful when you've learnt how to allocate and manage your states. MVVM however heavily relies upon <code>@ObservedObject</code> for binding, because iOS had no binding. For beginners this is dangerous, because it needs to be reference type. The result might be, as in this case, overuse of reference types which defeats the whole purpose of a SDK built around value types.</p>
+</li>
+<li><p>It also removes most of the boilerplate init codes, and one can focus on 1 shared state object instead of 4.</p>
+</li>
+<li><p>If you think SwiftUI creators are idiots, SwiftUI is not scalable and requires MVVM on top of it, IMO you are sadly mistaken.</p>
+</li>
+</ol>
+",0,False,Jim lai,2020-07-05T10:16:37+00:00,2020-07-05T10:16:37+00:00,,MVVM
+68342521,68341138,"<p>One way to accomplish this is by using a callback function that's passed to the second view model that can execute some code in the parent view. Something like:</p>
+<pre><code>class CarSearchViewModel: ObservableObject {
+    @Published var chosenCar: Car? = nil
+    @Published var allCars: [Car]
+    
+    var saveCallback: (Car) -&gt; Void
+    var carRepository: CarRepository
+    
+    init(carRepository: CarRepository, saveCallback: @escaping (Car) -&gt; Void) {
+        self.carRepository = carRepository
+        self.saveCallback = saveCallback
+    }
+    
+    func save(car: Car) {
+        self.saveCallback(car)
+    }
+}
+
+class CarShowViewModel: ObservableObject {
+     @Published var newCars: [Car] = []
+}
+
+struct CarShowView: View {
+    @ObservedObject var carShowVM = CarShowViewModel()
+    @State private var showAllCars = false
+    
+     var body: some View {
+          Text(&quot;Hello, world!&quot;)
+            .sheet(isPresented: $showAllCars) {
+                CarSearchView(carSearchVM:
+                                CarSearchViewModel(carRepository: CarRepository(), //not sure where this is coming from
+                                                   saveCallback: { car in
+                                                    carShowVM.newCars = [car] //or whatever should be here
+                                                   }))
+            }
+     }
+}
+</code></pre>
+<p>Note that I had to guess a little bit about what's going on here, but the concept should be sound. Also probably important to note that SwiftUI <code>View</code>s should be <code>struct</code>s, and not classes -- you have them marked incorrectly in your code.</p>
+<hr/>
+<p>Another method to accomplish this would be to have one source of truth for both the parent and child view -- basically, one view model for both. This may break a strict MVVM pattern, of course.</p>
+<p>There are also ways you could do this with Combine and Publishers, but the callback method I mentioned seems the simplest.</p>
+",1,True,jnpdx,2021-07-12T05:57:38+00:00,2021-07-12T05:57:38+00:00,,MVVM
+70147145,70146260,"<p>I think you are taking MVVM too far in your code in trying to learn it and are needlessly complicating things. This code is pretty fragile and is not easily changed. I did get your code working, and I want to go through it for a bit.</p>
+<p>I cleaned up your <code>enum</code> and that is commented in code. I also changed your <code>var bools</code> to be of type [Select:Bool]. This allows you to use the enum cases themselves, instead of the raw values. The compiler can then help you because it knows what is a valid <code>Select</code> case and what is not. When you use <code>String</code>, it has no idea that you meant a &quot;string which is the raw value of a <code>Select</code> case. The greatly reduces errors.</p>
+<p>Also, avoid having so much white space in your code. Try to have logical groupings that you separate with a space. Too much white space makes your code difficult to read because you end up scrolling so much just to see it all.</p>
+<p>Where your code was actually failing was in the <code>SortButton</code> itself. In the <code>Button</code>, the action you told the <code>Button</code> to take was to define your <code>func show(button:)</code>. Therefore, this function was only defined briefly when any of the buttons were used, and then was gone. Frankly, I can't believe the Xcode allowed this at all without raising some error. You wan to define the function outside of your <code>var body</code> and call it from within the button's action.</p>
+<p>Lastly, and this is not something I can really change in your code, you should avoid using a <code>!</code> to force unwrap optionals. It works here simply because you have a small fixed amount of constant arrays, but as things grow more complex this becomes a fatal error.</p>
+<pre><code>struct ContentView: View {
+    
+    @StateObject private var vm = ContentViewModel()
+
+    var body: some View {
+        VStack {
+            HStack {
+                SortButton(name: .arrayOne, bools: $vm.bools)
+                    .onChange(of: vm.bools){ _ in vm.getArray()}
+                SortButton(name: .arrayTwo, bools: $vm.bools)
+                    .onChange(of: vm.bools){ _ in vm.getArray()}
+                SortButton(name: .arrayThree, bools: $vm.bools)
+                    .onChange(of: vm.bools){ _ in vm.getArray()}
+            }
+            
+            List {
+                ForEach(vm.contentArray, id: \.self) { content in
+                    Text(content.self)
+                }
+            }
+        }
+        .onAppear {
+            vm.setButtons()
+            vm.getArray()
+        }
+    }
+}
+
+struct SortButton: View {
+    
+    var name: Select
+    @Binding var bools: [Select : Bool]
+
+    var body: some View {
+        Button {
+            show(button: name)
+        } label: {
+            Text(name.rawValue)
+        }
+    }
+    //This is defined outside of the body, and called from the button.
+    func show(button: Select) {
+        Select.allCases.forEach { button in
+            bools[button] = false
+        }
+        bools[button] = true
+    }
+}
+
+enum Select: String, CaseIterable {
+    // when you declare an enum to be of type String, you get the string version of the name for free
+    // you don't need case arrayOne = &quot;arrayOne&quot;. Also, once you remove the = &quot;&quot;
+    // you can use one case statement to define them all. The only time you need the = &quot;&quot; is when
+    // you want to change the default rawValue such as case arrayOne = &quot;Array One&quot;
+    case arrayOne, arrayTwo, arrayThree
+}
+
+class ContentViewModel: ObservableObject {
+    
+    @Published var contentArray = [String]()
+    @Published var bools = [Select : Bool]()
+
+    private let arrayOne = [&quot;One&quot;, &quot;Two&quot;, &quot;Three&quot;]
+    private let arrayTwo = [&quot;Four&quot;, &quot;Five&quot;, &quot;Six&quot;]
+    private let arrayThree = [&quot;Seven&quot;, &quot;Eight&quot;, &quot;Nine&quot;]
+    
+    func setButtons() {
+        Select.allCases.forEach { button in
+            bools[button] = false
+        }
+        bools[.arrayOne] = true
+    }
+    
+    
+    func getArray() {
+        // if you just set contentArray equal to one of the other arrays, you
+        // get the same result as the .removeAll and the .append(contentsOf:)
+        if bools[.arrayOne]! { contentArray = arrayOne }
+        if bools[.arrayTwo]! { contentArray = arrayTwo }
+        if bools[.arrayThree]! { contentArray = arrayThree }
+    }
+}
+</code></pre>
+<p>I also did a quick run through of how I could condense and simplify your code further. There is still more to be done, but this is a bit of an artificial exercise. With MVVM, you want to separate the model logic from the view and place that in the view, but you should have view logic to display the view model's data. As much as the view model hides the model logic, the view should be able to handle different view models and display the data consistently. That is the essence of reusability.</p>
+<p>Also, you will notice I removed the separate <code>SortButton</code> calls in <code>ContentView</code> and used a <code>ForEach</code>. This is a good example of DRY in action and it scales easily as you add <code>Select</code> cases.</p>
+<p>One area this code can be improved is a better mechanism in SortButton to get 'ContentViewModel' to update. I just passed in <code>ContentViewModel</code>, but this could be further simplified.</p>
+<pre><code>struct ContentView: View {
+    @StateObject private var vm = ContentViewModel()
+
+    var body: some View {
+        VStack {
+            HStack {
+                ForEach(Select.allCases, id: \.self) { name in
+                    SortButton(name: name, vm: vm)
+                }
+            }
+            List {
+                ForEach(vm.contentArray, id: \.self) { content in
+                    Text(content.self)
+                }
+            }
+        }
+    }
+}
+
+struct SortButton: View {
+    var name: Select
+    let vm: ContentViewModel
+    
+    var body: some View {
+        Button {
+            vm.updateContentArray(select: name)
+        } label: {
+            Text(name.rawValue)
+        }
+    }
+}
+
+enum Select: String, CaseIterable {
+    case arrayOne, arrayTwo, arrayThree
+}
+
+class ContentViewModel: ObservableObject {
+    
+    @Published var contentArray: [String]
+
+    private let arrayOne = [&quot;One&quot;, &quot;Two&quot;, &quot;Three&quot;]
+    private let arrayTwo = [&quot;Four&quot;, &quot;Five&quot;, &quot;Six&quot;]
+    private let arrayThree = [&quot;Seven&quot;, &quot;Eight&quot;, &quot;Nine&quot;]
+    
+    init() {
+        contentArray = arrayOne
+    }
+    
+    func updateContentArray(select: Select) {
+        switch select {
+        case .arrayOne:
+            contentArray = arrayOne
+        case .arrayTwo:
+            contentArray = arrayTwo
+        case .arrayThree:
+            contentArray = arrayThree
+        }
+    }
+}
+</code></pre>
+",0,True,Yrb,2021-11-28T20:16:33+00:00,2021-11-28T20:16:33+00:00,,MVVM
+70013434,68493146,"<p>It's not good practice to use MVVM view model objects with SwiftUI because in SwiftUI, the View struct value type is designed to hold the view data which is regarded as less buggy than using objects. The use of property wrappers, e.g. @State give these value types similar semantics to reference types, i.e. objects, so we get the best of both worlds. If you move your view data into view model objects instead of using the View struct correctly, then you lose these features and re-introduce the consistency bugs that SwiftUI was designed to eliminate. These structs form an efficiently updated (via dependency tracking) and diffed hierarchy and SwiftUI internally takes the result and they update UIKit (or AppKit) controls for us in a platform specific way, we don’t interact with the actual UIViews, NSView i.e. the V in the traditional MVC/MVVM sense at all.</p>
+<p>The ‘ObservableObject’ protocol for reference types is part of the Combine framework so we only use that when we require a Combine pipeline which doesn’t appear to be required in your case. ‘@StateObject’ defines a source of truth, thus it cannot possibly take any parameters because then it wouldn’t be a source of truth.</p>
+",-2,False,malhal,2021-11-18T01:11:55+00:00,2022-05-16T22:36:51+00:00,,"MVC,MVVM"
+74020546,74019937,"<p>This question is duplicate of <a href=""https://stackoverflow.com/questions/68930434/accessing-stateobjects-object-without-being-installed-on-a-view-this-will-crea"">this one</a>.</p>
+<p>Here is a minimum example of <strong>SwiftUI</strong> with <strong>MVVM</strong>. Put your location update to the <code>onAppear</code>, remove it from <code>init</code>.</p>
+<pre><code>import SwiftUI
+
+struct NumberView: View {
+    @StateObject private var viewModel = NumberViewModel()
+
+    init() {
+        // Accessing StateObject's object without being installed on a View. This will create a new instance each time.
+        // viewModel.increaseNum()
+    }
+
+    var body: some View {
+        VStack {
+            Text(&quot;Num: \(viewModel.num)&quot;)
+            Button(&quot;Increase num&quot;, action: {
+                // No warnings about accessing StateObject's object without being installed on a View
+                viewModel.increaseNum()
+                print(&quot;New num to viewModel: \(viewModel.num)&quot;)
+            })
+        }
+        .onChange(of: viewModel.num) { newNum in
+            print(&quot;New num from viewModel: \(newNum)&quot;)
+        }
+        .onAppear {
+            // No warnings about accessing StateObject's object without being installed on a View
+            viewModel.increaseNum()
+        }
+    }
+}
+
+class NumberViewModel: ObservableObject {
+    @Published private(set) var num: Int = 0
+
+    func increaseNum() {
+        num += 1
+    }
+}
+</code></pre>
+",-2,False,Denis Kutlubaev,2022-10-10T20:50:12+00:00,2022-10-10T20:50:12+00:00,,MVVM
+79020599,79018994,"<blockquote>
+<p>Maybe I don't understand mvvm?</p>
+</blockquote>
+<p>Your misunderstanding is not with MVVM, but how SwiftUI and state changes work.</p>
+<p>All a <a href=""https://developer.apple.com/documentation/combine/published"" rel=""nofollow noreferrer"">Published</a> property wrapper does is call the <a href=""https://developer.apple.com/documentation/combine/observableobject/objectwillchange-2oa5v"" rel=""nofollow noreferrer"">objectWillChange</a> publisher of an <a href=""https://developer.apple.com/documentation/combine/observableobject"" rel=""nofollow noreferrer"">ObservedObject</a> in the <code>willSet</code> Handler.</p>
+<p>This is all well documented by Apple. I recommend watching the related WWDC videos like <a href=""https://developer.apple.com/videos/play/wwdc2021/10022/"" rel=""nofollow noreferrer"">Demystify SwiftUI</a>.</p>
+<p>Changing the property of an element in a Swift array does not call the <code>willSet</code> handler of the array itself.
+In your case changing the <code>isSelected</code> property of a <code>RoutineUnit</code> does not change the <code>routineUnits</code> array or your <code>RoutineDetailViewModel</code>.
+And since the <code>willSet</code> handler is not called, no event is emitted by the <code>objectWillChange</code> publisher and no SwiftUI re-layout / state update is triggered.</p>
+<p>In other words, with a <code>Published</code> property wrapper you do not automatically get a “deep observation” of a property. Of course, this also applies to collection properties and their elements.</p>
+<p>There are several ways to achieve what you want.</p>
+<p>If your app does not require support for iOS versions prior to iOS 17, you can <a href=""https://developer.apple.com/documentation/swiftui/migrating-from-the-observable-object-protocol-to-the-observable-macro"" rel=""nofollow noreferrer"">migrate to the Observable macro</a>, which supports collections and the kind of deep observation you're trying to use.</p>
+<p>Otherwise you will have to change your state handling or your data/view modeling.</p>
+<p>You could also manually trigger the <code>objectWillChange</code> publisher in your <code>toggleSelection</code> method, but that would not be an ideal solution.</p>
+<p>If you want changes to a <code>RoutineUnit</code> model in SwiftUI to result in a state change, they themselves must fulfill the <code>ObservableObject</code> protocol and you should have a separate view for a single <code>RoutineUnit</code> object.</p>
+<p>Something like this:</p>
+<pre class=""lang-swift prettyprint-override""><code>final class RoutineUnit: Identifiable, Equatable, ObservableObject {
+   // ...
+}
+</code></pre>
+<pre class=""lang-swift prettyprint-override""><code>struct RoutineUnitView: View {
+    @ObservedObject var routineUnit: RoutineUnit
+
+    var body: some View {
+        VStack {
+            Text(&quot;title: \(routineUnit.title)&quot;)
+
+            if routineUnit.isSelected {
+                // ...
+            }
+        }
+    }
+}
+</code></pre>
+<pre class=""lang-swift prettyprint-override""><code>struct RoutineUnitListView: View {
+    @ObservedObject var viewModel: RoutineDetailViewModel
+
+    var body: some View {
+        VStack {
+            ForEach(viewModel.routineUnits) { unit in
+                RoutineUnitView(routineUnit: unit)
+            }            
+        }
+    }
+}
+</code></pre>
+<p>I hope you understand the idea, i.e. one view/model for the list, one view/model for each detailed view.</p>
+<p>This allows you to change the list as a whole and also the individual elements of the collection.</p>
+",1,True,ITGuy,2024-09-24T22:41:08+00:00,2024-09-24T23:14:09+00:00,,MVVM
+79020559,79018994,"<blockquote>
+<p>Updated after @loremipsum comment</p>
+</blockquote>
+<p>Look, MVVM means that you have the ViewModel and View. View subscribe on ViewModel updates/changes.
+In you example:</p>
+<ul>
+<li>You should have container View, that show UI according to viewModel items</li>
+</ul>
+<pre class=""lang-swift prettyprint-override""><code>struct ContentView: View {
+    @StateObject var viewModel = RoutineDetailViewModel()
+    var body: some View {
+        List($viewModel.routineUnits) { unit in
+            RoutineUnitView(unit: unit)
+        }
+    }
+}
+</code></pre>
+<ul>
+<li>ViewModel simple example with data-mock</li>
+</ul>
+<pre class=""lang-swift prettyprint-override""><code>class RoutineDetailViewModel: ObservableObject {
+    @Published var routineUnits: [RoutineUnit] = []
+    
+    init() {
+        routineUnits = [
+            .init(id: &quot;1&quot;, isSelected: false),
+            .init(id: &quot;12&quot;, isSelected: false),
+            .init(id: &quot;123&quot;, isSelected: false),
+            .init(id: &quot;1234&quot;, isSelected: false),
+            .init(id: &quot;12345&quot;, isSelected: false),
+            .init(id: &quot;123456&quot;, isSelected: false),
+            .init(id: &quot;1234567&quot;, isSelected: false),
+            .init(id: &quot;12345678&quot;, isSelected: false)
+        ]
+    }
+}
+</code></pre>
+<ul>
+<li>You pass viewModel item entity to subview where you can modify it later</li>
+</ul>
+<pre class=""lang-swift prettyprint-override""><code>struct RoutineUnitView: View {
+    @Binding var unit: RoutineUnit
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(unit.isSelected ? .green :.white)
+            .frame(height: 84)
+            .overlay {
+                VStack {
+                    Text(unit.id)
+                }
+            }
+            .onTapGesture {
+                withAnimation {
+                    unit.isSelected = true
+                }
+            }
+    }
+}
+</code></pre>
+<p>Also want no notice that is better to create Model as Struct( not class object). In yours initial code RoutineUnit is class</p>
+<pre class=""lang-swift prettyprint-override""><code>struct RoutineUnit: Identifiable {
+    var id: String
+    var isSelected: Bool
+}
+</code></pre>
+<p>To read more about MVVM in SwiftUI you can visit:</p>
+<ul>
+<li><a href=""https://www.hackingwithswift.com/books/ios-swiftui/introducing-mvvm-into-your-swiftui-project"" rel=""nofollow noreferrer"">https://www.hackingwithswift.com/books/ios-swiftui/introducing-mvvm-into-your-swiftui-project</a></li>
+</ul>
+",-1,False,Drendroyt,2024-09-24T22:26:19+00:00,2024-09-25T16:49:40+00:00,,MVVM
+69358352,69357270,"<p>Instead of giving you a concrete answer which concrete variable you might move to the view model, I would like to give you a more general answer, which might also help you in the decision of other use cases, and eventually should help to answer your question yourself ;)</p>
+<p>A View Model publishes the <em>binding</em> (I am <em>not</em> talking about a <code>@Binding here</code>!), which <em>completely</em> and <em>unambiguously</em>  describes <em>what</em> a view shall render. The <em>how</em> it actually looks like may be still part of the view.</p>
+<blockquote>
+<p>Tip: define a struct which contains all the variables constituting the binding, then publish this struct in your view model. You may name this binding <code>ViewState</code>.</p>
+</blockquote>
+<p>If we take this strict, it means in other words, that for each possible value of the binding, there is one and only one visual representation of the view.</p>
+<p>However, in practice, it is favourable to relax this a bit, otherwise you would have to specify and handle even the scrolling position of a scroll view, too. How far you go with this may depend on the complexity of your view and the whole scenario. But the rule, that the <em>binding</em> is the definitive source of truth for the view and determines what it is rendering should not be violated.</p>
+<p>Generally, in a scenario where your model is not mutable (i.e. there are no user actions which alter the model), you very rarely would use <code>@State</code> variables in a SwiftUI view, since there is nothing which is <em>variable</em>.</p>
+<p>Even when it happens that the elements in the list change or the order or the number of elements change, the list <em>view</em> always receives a <em>constant</em> array of elements whose elements are also not mutable <em>by the user</em>. Thus, you use a <code>let elements: [Element]</code> in your SwiftUI view.</p>
+<p>On the other hand, your view model may use a model which publishes a value of <code>[Element]</code> and the view model observes it, and then <em>mutates</em> the binding accordingly.</p>
+<p>Another principle of MVVM is (actually any MV* pattern) that your view does not perform logic on its own <em>and</em> it never ever changes the binding.
+Instead, your view signals the user's &quot;intent&quot; via call backs (aka actions, events, intents) which eventually will reach the view model and then handled there, which in turn may eventually affect the binding.</p>
+<p>Strictly, that would mean, if you have a scenario where a user can edit a string, and IFF you use a binding for this string, the string <em>cannot</em> be mutated by editing of the user. Instead, each editing command will be send to the view model, the view model then handles the changes, and sends back the mutated binding which eventually will reflect the user's changes.</p>
+<p>Also, in practice there might be more favourable solutions: a view might use its own &quot;edit buffer&quot; for the string, using a <code>@State</code> variable. This string gets mutated &quot;internally&quot; within the view when the user edits the text. The model only gets informed when the user &quot;commits&quot; the changes, or when the user taps the &quot;back&quot; or &quot;done&quot; button. This approach is favourable when the &quot;editing&quot; itself is simple and no complex validation is required during editing, or when there is no need to trigger side effects (like updating a suggestion list in a search bar). Otherwise, you would route the editing through the view model.</p>
+<p>Again in practice, you decide how far you go with a view that has &quot;it's own behaviour&quot;. It depends on the use case and what is favourable in terms of avoiding unnecessary complex solutions which don't make the solution any better through being too strict to the pattern.</p>
+<p><strong>Conclusion:</strong></p>
+<p>In MVVM, you use <code>@State</code> variables in Views only iff your View adds a behaviour which does not strictly need to be monitored by the View Model and does not violate the rule that the Binding is the definitive source of truth from the perspective of the view and that the View Model still is the authority for the performed logic.</p>
+",2,False,CouchDeveloper,2021-09-28T08:34:06+00:00,2021-09-28T08:34:06+00:00,,"MV,MVVM"
+66062756,66052086,"<p>The views, their view (state, business logic etc) models and the app data models all appear nicely separated, so fwiw the example looks good to me - especially if the full code is working :-)</p>
+<p>In terms of MVVM refinement; I've seen it suggested that:</p>
+<ul>
+<li>Putting the view models in an extension of their view is sensible - since they are almost never reused anywhere else and it makes organisation a bit easier.</li>
+<li>Using Protocols to specify model parameters is a good practice as it permits more flexibility, particularly with regards to the use of mock objects during testing.</li>
+</ul>
+<p>For more details on the above, Kilo Loco's short YouTube video on the subject is good, it can be found <a href=""https://www.youtube.com/watch?v=bdqEcpppAMc&amp;list=LL&amp;index=2&amp;t=880s"" rel=""nofollow noreferrer"">here</a></p>
+<p>Good luck and have fun.</p>
+",1,True,shufflingb,2021-02-05T11:50:27+00:00,2021-02-05T11:50:27+00:00,,MVVM
+78182575,78181594,"<p>In SwiftUI the <code>View</code> struct already is the view model, thus it already is MVVM and already is clean. SwiftUI automatically manages the UI layer (i.e. UIKit UIView objects) from these <code>View</code> struct lightweight descriptions and keeps them up to date. If you try to code view model objects on top you'll just run into major issues so it's best to just learn the <code>View</code> struct, and how <code>body</code> is called when ever any <code>@State var</code>, <code>@Binding var</code> or <code>let</code> changes. You'll also need to use computed vars to transform data as you pass it in to a child <code>View</code>. If you want to group related vars with testable logic you can make a <code>@State</code> custom struct but have to learn about <code>mutating func</code>.</p>
+<p>For your service, usually those are <code>EnvironmentKey</code> structs, that way they can be easily replaced with a mock for Previews. Usually they have an async func you can call from <code>.task</code> that returns results you can store in <code>@State</code>. See Apple's <a href=""https://developer.apple.com/documentation/authenticationservices/authorizationcontroller"" rel=""nofollow noreferrer""><code>@Environment(\.authorizationController)</code></a> for an example.</p>
+",1,False,malhal,2024-03-18T19:18:28+00:00,2024-03-18T19:18:28+00:00,,MVVM
+76724175,76663809,"<p>Don't use MVVM in UIKit, it's better to use child view controllers and the responder chain.</p>
+<p>You can call a method in your view controller that will automatically work its way up to the scene delegate without needing to pass a reference down.</p>
+",0,False,malhal,2023-07-19T18:16:33+00:00,2023-07-19T18:16:33+00:00,,MVVM
+62737147,62622755,"<pre><code>struct SwiftUIView: View {
+
+    @State m = AssignmentModel()
+   
+    var body: some View {
+        // use m   
+    }
+    func loadAssignmentFromDB() {
+        m.retrieveFirstAssignment()
+    }
+}
+</code></pre>
+<p>This is what I called &quot;enhanced MVC with built-in MVVM&quot;.</p>
+<p>It satisfies your pursuit of MVC and possibly MVVM, at the same time, with much less effort.</p>
+<p>Now I'll argue why:</p>
+<ol>
+<li>function, or more specifically, <em>mutation</em> is Control. you don't need an object called &quot;Controller&quot; to have C in MVC. Otherwise we might as well stick to UIKit for 10 more years.</li>
+</ol>
+<p>this makes sense when your model is value type. nothing can mutate it without your specific say-so, e.g.; @State annotation. since the only way to mutate model is via these designated endpoints, your Control takes effect only in the function that mutates these endpoints.</p>
+<ol start=""2"">
+<li>Quoting from another reply:</li>
+</ol>
+<blockquote>
+<p>It is true that SwiftUI is a much closer match with MVVM than with MVC. However, almost all example code in the Apple documentation is so simple the ViewModel (and/or Controller in MVC) is left out completely. Once you start creating bigger projects the need for something to bridge your Views and Models arises. However, IMO, the SwiftUI documentation does not (yet) fully address this in a satisfying way.</p>
+</blockquote>
+<p>SwiftUI, if anything, enhances MVC. What is the purpose of having ViewModel?</p>
+<p>a.) to have model view binding, which is present in my code snippet above.</p>
+<p>b.) to manage states associated with object. if <code>@State</code> does not give you the impression that it is for you to manage state, then i don't know what will. it's funny how many MVVM devs are just blind to this. Just as you don't need View Controller for Control, you don't need ViewModel for VM. Design pattern is a <code>@State</code> of mind. Not about specific naming and rigid structure.</p>
+<p>c.) say i'm open to MVVM without being based. which code snippet do you think have more chance in scaling to larger projects? my compact one or that suggested in another reply?
+hint: think how many extra files, view models, observableobjects, glue codes, pass-around-vm-as-parameters, init function to accept vm as parameters, you are going to have. and these are just for you to write some of the code in another object. it says nothing about reducing or simplifying the task at hand. hell it does even tell you how to refactor your control codes, so you are most likely to just repeat whatever you did wrong in MVC all over again. did i mention ViewModel is a shared, reference type object with implicit state managements? so what's the point of having a <strong>value</strong> type model when you are just going to override it with a reference type model?</p>
+<p>it's funny how MVVM devs say SwiftUI in its base form is not scalable to larger projects. keeping things simple is the only way to scale.</p>
+<p>This is what I observed as the roadmap of dev progression in 2020.
+Day1: beginner
+Day2: google some, drop MVC
+Day3: google some more, SwiftUI not scalable
+Day4: OK, I need MVVM+RxSwift+Coordinator+Router+DependencyInjection to avoid SDK short-comings.</p>
+<p>My suggestion, due to this seems like a common beginner question, is to learn to walk before you run.</p>
+<p>I've personally seen RxSwift developers move controller code to view so that controller appears &quot;clean&quot;, and need 3 third-party libraries (one is a custom fork) to send a http GET.</p>
+<p>Design pattern means nothing if you can't get simple things simple.</p>
+",8,False,Jim lai,2020-07-05T05:24:38+00:00,2020-07-05T05:24:38+00:00,,"MV,MVC,MVVM"
+61727764,61719769,"<p>Use a dedicated network service. </p>
+
+<p>Search your feelings, you know it to be true.</p>
+
+<p>The problem is, it goes against everything you think you know about MVVM. </p>
+
+<p>Most MVVM devs use view model as a convenient wrapper for networking requests (which have side effects), business logic, and view controls.</p>
+
+<p>The idea behind it is to refactor out view-binding model and associated logic/effects.</p>
+
+<p>And as with all design patterns, some devs would abuse it, twist it, copy and paste it from java ... etc. </p>
+
+<p>As time goes by, devs began to take ViewModel for granted, since it's a norm in Android, it must work in iOS, right?</p>
+
+<p>Any dev worth their salt would ask these questions when they try to port MVVM to SwiftUI:</p>
+
+<ul>
+<li><p>Is there a binding mechanism in SwiftUI? How does it work?</p></li>
+<li><p><code>struct Model: View {...}</code>, is this a model-view mapping? If so I may not need to declare 
+a separate ViewModel? (pro only question)</p></li>
+<li><p>Whoever conforms to ObservableObject can be observed (to trigger view update), this goes 
+beyond the narrow definition of view model (view-related properties). An ObservableObject 
+can be a <em>service</em> or <em>shared resource</em>. E.g.; A networking service. Congratulations, you 
+just took the first step into a much larger world.</p></li>
+<li><p>Why would I introduce a reference type view model to augment a value type model view for 
+every such value type that conforms to View in a SDK built around value type? Swift is not 
+java?</p></li>
+</ul>
+
+<p>Now we have enough setup to properly answer your question.</p>
+
+<ol>
+<li><p>Create a dedicated networking service, e.g.;</p>
+
+<pre><code>final class Resource: ObservableObject { // don't even need inheritance, OOP isn't always the best solution in all situations 
+    @Published var requests = [Requests]()
+    // publish other resources
+    func loadRequests() {
+        /* update requests in callback */
+    }
+}
+</code></pre></li>
+<li><p>use it, e.g.; </p>
+
+<pre><code>struct Model: View {
+    @State var model = MyModel() // can be ""view model"", because it maps to view 
+    @EnvironmentObject var res: Resource
+    // or as an alternative, @ObservedObject var res = Resource()
+    var body: some View {
+        // access the automatic binding provided by SwiftUI, e.g.; res.requests
+        // call res.loadRequests() to mutate internal state of a reference type
+        // note that stateful part of the ""view model"" is refactored out 
+        // so that `model` can be value type, yet it provides binding via @State
+        // instead of ObservableObject, which has to be reference type
+        // this is the brilliance of SwiftUI, it moves heaven and earth so you have 
+        // the safety of immutability from value type, **unlike MVVM**
+    }  
+}  
+</code></pre></li>
+<li><p>Done.</p></li>
+<li><p><strong>Why do we need ViewModel again?</strong> Let me know in the comments.</p></li>
+</ol>
+",4,True,Jim lai,2020-05-11T10:41:54+00:00,2020-05-11T10:41:54+00:00,,"MV,MVVM"
+62636681,62622755,"<p>To me this is a very good question. It is true that SwiftUI is a much closer match with MVVM than with MVC. However, almost all example code in the Apple documentation is so simple the ViewModel (and/or Controller in MVC) is left out completely. Once you start creating bigger projects the need for something to bridge your Views and Models arises. However, IMO, the SwiftUI documentation does not (yet) fully address this in a satisfying way. I would love other developers to correct me or expand on this (I'm still learning), but here's what I found out so far:</p>
+<ul>
+<li>For managing updating your views in non-example project you almost always want to use ObservableObject/ObservedObject.</li>
+<li>Views should only observe an object if they need to be updated if it changes. It is better if you can delegate the updates to a child view.</li>
+<li>It may be tempting to create a large ObservableObject and add <code>@Published</code> for all of its properties. However, this means that a view that observes that object gets updated (sometimes visibly) even if a property changes on which the view does not even depend.</li>
+<li>Binding is the most natural interface for Views that represent controls that can modify data. Beware that a Binding does NOT trigger updating views. Updating the view should be managed either @State or @ObservedObject (this can done by the parent view of the control).</li>
+<li>Constants are the natural interface for Views that only display data (and not modify it).</li>
+</ul>
+<p>Here is how I would apply this to your example:</p>
+<pre><code>import SwiftUI
+
+//
+// Helper class for observing value types
+//
+class ObservableValue&lt;Value: Hashable&gt;: ObservableObject {
+    @Published var value: Value
+    
+    init(initialValue: Value) {
+        value = initialValue
+    }
+}
+
+//
+// Model
+//
+struct Assignment {
+    let name : String
+    let notes: String
+}
+
+//
+// ViewModel?
+//
+// Usually a view model transforms data so it is usable by the view. Strings are already
+// usable in our components. The only change here is to wrap the strings in an
+// ObservableValue so views can listen for changes to the individual properties.
+//
+// Note: In Swift you often see transformations of the data implemented as extensions to
+// the model rather than in a separate ViewModel.
+
+class AssignmentModelView {
+    var name : ObservableValue&lt;String&gt;
+    var notes: ObservableValue&lt;String&gt;
+    
+    init(assignment: Assignment) {
+        name  = ObservableValue&lt;String&gt;(initialValue: assignment.name)
+        notes = ObservableValue&lt;String&gt;(initialValue: assignment.notes)
+    }
+    
+    var assignment: Assignment {
+        Assignment(name: name.value, notes: notes.value)
+    }
+}
+
+//
+// Controller
+//
+// Publish the first assignment so Views depending on it can update whenever we change
+// the first assignment (**not** update its properties)
+class AssignmentController: ObservableObject {
+    @Published var firstAssignment: AssignmentModelView?
+
+    func retrieveFirstAssignment() {
+        let assignment = Assignment(name: &quot;My First Assignment&quot;, notes: &quot;Everyone has to start somewhere...&quot;)
+        
+        firstAssignment = AssignmentModelView(assignment: assignment)
+    }
+}
+
+struct ContentView: View {
+
+    // In a real app you should use dependency injection here
+    // (i.e. provide the assignmentController as a parameter)
+    @ObservedObject var assignmentController = AssignmentController()
+  
+    var body: some View {
+        
+        NavigationView {
+            VStack {
+            
+                // I prefer to use `map` instead of conditional views, since it
+                // eliminates the need for forced unwrapping
+                self.assignmentController.firstAssignment.map { assignmentModelView in
+                    Form {
+                        ObservingTextField(title: &quot;Assignment Name&quot;, value:  assignmentModelView.name)
+                        ObservingTextField(title: &quot;Notes&quot;, value: assignmentModelView.notes)
+                    }
+                }
+               
+                Button(action: { self.retrieveFirstAssignment() }) {
+                    Text(&quot;Get The First Assignment !&quot;)
+                }
+            }
+            .navigationBarTitle(&quot;First Assignment&quot;)
+        }
+    }
+    
+    func retrieveFirstAssignment() {
+        assignmentController.retrieveFirstAssignment()
+    }
+}
+
+//
+// Wrapper for TextField that correctly updates whenever the value
+// changes
+//
+struct ObservingTextField: View {
+    let title: String
+    @ObservedObject var value: ObservableValue&lt;String&gt;
+    
+    var body: some View {
+        TextField(title, text: $value.value)
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
+
+</code></pre>
+<p>This may be overkill for your app. There is a more straightforward version, but it has the
+disadvantage that TextFields are updated even though their contents hasn't changed. In
+this particular example I do not think that matters much. For larger projects it may
+become important, not (just) for performance reasons, but updates are sometimes very
+visible. For reference: here's the simpler version.</p>
+<pre><code>import SwiftUI
+
+// Model
+struct Assignment {
+    let name : String
+    let notes: String
+}
+
+// ViewModel
+class AssignmentViewModel: ObservableObject {
+    @Published var name : String
+    @Published var notes: String
+    
+    init(assignment: Assignment) {
+        name  = assignment.name
+        notes = assignment.notes
+    }
+}
+
+// Controller
+class AssignmentController: ObservableObject {
+    @Published var firstAssignment: AssignmentViewModel?
+
+    func retrieveFirstAssignment() {
+        let assignment = Assignment(name: &quot;My First Assignment&quot;, notes: &quot;Everyone has to start somewhere...&quot;)
+        
+        firstAssignment = AssignmentViewModel(assignment: assignment)
+    }
+}
+
+struct ContentView: View {
+    // In a real app you should use dependency injection here
+    // (i.e. provide the assignmentController as a parameter)
+    @ObservedObject var assignmentController = AssignmentController()
+  
+    var body: some View {
+        
+        NavigationView {
+            VStack {
+                self.assignmentController.firstAssignment.map { assignmentModelView in
+                    FirstAssignmentView(firstAssignment: assignmentModelView)
+                }
+               
+                Button(action: { self.retrieveFirstAssignment() }) {
+                    Text(&quot;Get The First Assignment !&quot;)
+                }
+            }
+                .navigationBarTitle(&quot;First Assignment&quot;)
+        }
+    }
+    
+    func retrieveFirstAssignment() {
+        assignmentController.retrieveFirstAssignment()
+    }
+}
+
+struct FirstAssignmentView: View {
+    @ObservedObject var firstAssignment: AssignmentViewModel
+    
+    var body: some View {
+        Form {
+            TextField(&quot;Assignment Name&quot;, text: $firstAssignment.name)
+            TextField(&quot;Notes&quot;, text: $firstAssignment.notes)
+        }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
+</code></pre>
+",1,False,Jack Goossen,2020-06-29T11:00:52+00:00,2020-06-29T11:00:52+00:00,,"MVC,MVVM"
+71833985,71825897,"<p>You could remove the legacy MVVM pattern and do it in proper SwiftUI like this:</p>
+<pre><code>struct ContentView: View {
+    @State private var articles = [Article]()
+
+    var body: some View {
+        NavigationView {
+            List(articles) { article in
+                Text(article.title)
+            }
+            .navigationTitle(&quot;Articles&quot;)
+        }
+        .task {
+            do {
+                let url = URL(string: &quot;https://newsapi.org/v2/top-headlines?country=us&amp;category=business&amp;apiKey=2bfee85c94e04fc998f65db51ec540bb&quot;)!
+                let (data, _) = try await URLSession.shared.data(from: url)
+                articles = try JSONDecoder().decode([Article].self, from: data)
+            } catch {
+                articles = []
+            }
+        }
+    }
+}
+</code></pre>
+",0,False,malhal,2022-04-11T20:34:39+00:00,2022-04-11T20:34:39+00:00,,MVVM
+72081948,72076992,"<p>I think this implementation is a slightly misguided attempt at achieving an <code>MVVM</code>-like architecture (trust me, I've been there).</p>
+<p>In <code>MVVM</code> the so-called 'view model' is just as it sounds - a model for each view. It is the object that is responsible for keeping track of state for its view. If a user taps a button, the view model would be notified of the interaction, it does some internal recalculating of state, and then publishes that new state for the view to consume and implement. An example of this might be...</p>
+<pre><code>struct MyView: View {
+    @StateObject private var viewModel = MyViewViewModel()
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Button(&quot;Hello&quot;) {
+                viewModel.helloTapped()
+            }
+            if viewModel.helloIsVisible {
+                Text(&quot;Why hello friend.&quot;)
+            }
+        }
+    }
+}
+
+class MyViewViewModel: ObservableObject {
+    @Published private(set) var helloIsVisible = false
+    
+    func helloTapped() {
+        helloIsVisible = true
+    }
+}
+</code></pre>
+<p>In this example, the view model holds the state of the view (<code>helloIsVisible</code>) and publishes it for the view to consume. When the user interacts with the button, the view model recalculates state.</p>
+<p>The flaws I see in your implementation are as follows:</p>
+<ul>
+<li>You seem to be combining the view model with what should be another object in the service layer of your app. Your view and view model should be completely dumb about how the data that drives your view (hopefully in the form of a concise model) were fetched from <code>CoreData</code>. You can delegate the task of fetching the data and packaging it into a consumable model for the view model into another object (another class) in the service layer of your app. This could be passed around the app in a number of ways, preferably as a dependency, but also perhaps instantiated as a public singleton. It would be wise to read up on the different techniques of making this service available. The view model would either ask this 'CoreData fetching' class for the data that it needs, or the data would be injected as a dependency. Read about singletons <a href=""https://cocoacasts.com/what-is-a-singleton-and-how-to-create-one-in-swift"" rel=""nofollow noreferrer"">here</a> and dependency injection <a href=""https://swiftwithmajid.com/2022/02/02/microapps-architecture-in-swift-dependency-injection/"" rel=""nofollow noreferrer"">here</a>.</li>
+<li>Each view should have its own view model. Presumably the views are different in some way - otherwise, why have more than one? Create a separate view model for each, that each uniquely manage the state of its corresponding view. They should each have a similar mechanism for retrieving data from the 'CoreData fetching' class.</li>
+</ul>
+",0,False,Carter Foughty,2022-05-02T02:56:23+00:00,2022-05-02T02:56:23+00:00,,MVVM
+79616365,79616250,"<p>In MVVM, a View and the VM have a 1:1 relationship.
+Also, a VM implements logic (ideally a pure function) and publishes view state. The logic and the view state logic is inherent to your use case and never changes.
+This means, there's never a reason one would want to inject a view model via passing it through the environment. What you may want to inject via an environment are actual dependencies that the <em>model</em> of the view model uses.</p>
+<p>Your app is a hierarchy of views, like a tree. You should employ a structured communication. You can also think of a view model being part of this hierarchy, actually a parent of its View. Actually, you <em>can</em> implement the ViewModel as a SwiftUI View and completely get rid of all Observables objects (but I'm digressing). That is, the parent sends state to its children views, and children send messages only to their parent via a closure.</p>
+<p>A child view has no reference to its parent view, instead a parent passes a closure to its children and those then can send messages to the parent.</p>
+<p>You should avoid having ViewModels or Views sending messages to arbitrary other views or view models. To reach a sibling, you need to send the message to the parent and the parent sends it to the other child.</p>
+<p>A ViewModel should not reference another ViewModel. If you do, it's not MVVM anymore. Certainly you <em>can</em> - but I would strongly discourage from it. ViewModel can send messages further downstream, which is its Model. The Modal can be a <em>shared</em> object. Thus, a ViewModel A can send a message to Model M, and M publishes &quot;data&quot; which changes due to processing the message received from VM A. Your ViewModel B will observe Model M  as well and get notified, which in turn causes a reaction, based on its state and the event of the change from its model.</p>
+<p>A ViewModel mostly needs to account for a &quot;state&quot;. Your view model does not. For example, one can call <code>refreshView(with mainViewModel</code> several times, and your view model will create a task each time. Keeping track of its running services is the main objectivity of a ViewModel. You need <em>state</em> in your ViewModel to account for this.</p>
+",0,True,CouchDeveloper,2025-05-11T09:49:52+00:00,2025-05-12T14:19:23+00:00,,MVVM
+77512225,77510956,"<p>Although there are multiple methods, TCA recommends handling the child inside the parent.</p>
+<p>So in the parent, you will have a <code>state</code>, <code>action</code>, and <code>reducer</code> for the child (think of it as some proxy):</p>
+<pre><code>struct ParentReducer {
+    struct State: Equatable {
+        var child: ChildReducer.State? // Optional if it is possible for a child to be not activated at some points
+    }
+    
+    enum Action {
+        case child(ChildReducer.Action)
+    }
+    
+    var body: some Reducer&lt;State, Action&gt; {
+        Reduce { }
+            .ifLet(
+                \.child,
+                action: /Action.child,
+                destination: ChildReducer.init
+            )
+    }
+}
+</code></pre>
+<p>Also, you should scope the parent store for the child store and pass it instead:</p>
+<pre><code>ChildView(
+    store: store.scope(
+        state: \.child,
+        action: { .child($0) }
+    )
+)
+</code></pre>
+<p>💡 The <a href=""https://github.com/pointfreeco/swift-composable-architecture/blob/main/Examples/CaseStudies"" rel=""nofollow noreferrer"">case studies</a> examples are a good place to take a look at different scenarios.</p>
+<hr />
+<p><sub>⚠️ Be aware that I code this <strong>without the compiler</strong> and the code <em>may</em> not be ready to just a simple copy-paste</sub></p>
+",2,False,Mojtaba Hosseini,2023-11-19T19:41:48+00:00,2023-11-19T19:41:48+00:00,,TCA
+78867450,68339683,"<p>For TCA 1.10.2:</p>
+<pre class=""lang-swift prettyprint-override""><code>      List(
+        store.availableObjects,
+        selection: $store.selectedObject.sending(\.selectObject))
+      { object in
+        Button {
+          store.send(.selectObject(object))
+      } {
+         Text(&quot;Tap&quot;)
+      }
+</code></pre>
+",1,False,jakeo,2024-08-13T16:46:23+00:00,2024-08-13T16:46:23+00:00,,TCA
+73503943,73318961,"<p>I have a similar problem. My example is a bit more involved but arguably more generic. Hope it helps.</p>
+<p>My TCA setup looks like this:</p>
+<pre class=""lang-swift prettyprint-override""><code>struct State: Equatable {
+    var child: ChildState?
+    // ...
+}
+</code></pre>
+<p>One can get the child store by scoping the parent store:</p>
+<pre class=""lang-swift prettyprint-override""><code>let childStore = parentStore.scope { $0.child ?? ChildState() }
+</code></pre>
+<p>And the child view’s <code>body</code> looks like this:</p>
+<pre class=""lang-swift prettyprint-override""><code>var body: some View {
+    WithViewStore(childStore) { viewStore in
+        // ...
+    }
+}
+</code></pre>
+<p>Here is what happened:</p>
+<ol>
+<li>Some reducer sets <code>parent.child = nil</code>.</li>
+<li>This notifies every scoped store that the root state changes.</li>
+<li>Each scoped store then applies the scope function to get a new child state, and compares it with the previous one. More likely than not, we get a different child state. Some <code>objectWillChange</code> is called.</li>
+<li>The corresponding <code>WithViewStore</code> is marked dirty.</li>
+<li>The content closure in <code>WithViewStore</code> is called, and generates a new child view tree.</li>
+<li>SwiftUI then generates an animation from the old child view tree to the new child view tree, in addition to the dismissal animation for the whole child view tree.</li>
+</ol>
+<p>My solution is to kill step 3. First, let's extend the child state with another property:</p>
+<pre class=""lang-swift prettyprint-override""><code>struct ChildState: Equatable {
+    var isBeingDismissed: Bool = false
+}
+</code></pre>
+<p>Second, when scoping, let's do:</p>
+<pre class=""lang-swift prettyprint-override""><code>let childStore = parentStore.scope { x -&gt; ChildState in
+    if let child = x.child {
+        return child
+    }
+    var child = ChildState()
+    child.isBeingDismissed = true
+    return true
+}
+</code></pre>
+<p>Lastly, we can modify the <code>WithViewStore</code> with a custom <code>removeDuplicates</code> closure:</p>
+<pre class=""lang-swift prettyprint-override""><code>var body: some View {
+    WithViewStore(childStore) { old, new in 
+        if old == new {
+            return true
+        }
+        // Key
+        if new.isBeingDismissed {
+            return true
+        }
+        return false
+    } content: { viewStore in
+        // ...
+    }
+}
+</code></pre>
+<p>Here is how it works. The scoped child state can be <code>nil</code> in two cases, when the view is first created and the view is being dismissed. In the first case, the old is <code>nil</code>. In the second case, the new is <code>nil</code>. The custom <code>removeDuplicates</code> essentially does this: when a child state is being dismissed, we skip any update. So the only animation being played is the transition animation. The content stays the same.</p>
+",0,False,Minsheng Liu,2022-08-26T16:21:09+00:00,2022-08-26T16:21:09+00:00,,TCA

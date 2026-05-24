@@ -156,10 +156,6 @@ credentials.json
 client_secret*.json
 service-account*.json
 
-# Research data and generated artifacts
-data/
-outputs/
-
 # Spyder project settings
 .spyderproject
 .spyproject

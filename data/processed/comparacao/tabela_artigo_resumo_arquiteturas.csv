@@ -1,0 +1,11 @@
+architecture,github_repos,github_share,stackoverflow_total,stackoverflow_share,survey_used,survey_used_share,survey_main,survey_main_share,survey_most_suitable,survey_most_suitable_share,average_stars,average_stackoverflow_score,multicriteria_index,interpretive_profile
+MVVM,2195.0,59.49,318.0,84.57,13.0,38.24,8.0,61.54,5.0,38.46,19.82,2.24,0.9061,stackoverflow_strong
+MV,323.0,8.75,5.0,1.33,11.0,32.35,4.0,30.77,6.0,46.15,1.13,3.66,0.3713,survey_strong
+TCA,475.0,12.87,15.0,3.99,1.0,2.94,0.0,0.0,1.0,7.69,25.81,0.83,0.2079,consistent_across_sources
+MVVM-C,214.0,5.8,3.0,0.8,1.0,2.94,1.0,7.69,0.0,0.0,20.27,26.16,0.1707,consistent_across_sources
+MVC,133.0,3.6,17.0,4.52,2.0,5.88,0.0,0.0,0.0,0.0,2.74,18.78,0.1058,consistent_across_sources
+MVP,80.0,2.17,8.0,2.13,4.0,11.76,0.0,0.0,0.0,0.0,3.01,1.22,0.0909,consistent_across_sources
+VIPER,178.0,4.82,9.0,2.39,2.0,5.88,0.0,0.0,0.0,0.0,6.11,1.18,0.084,consistent_across_sources
+RIBs,14.0,0.38,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,16.57,0.0,0.0658,github_strong
+MVI,78.0,2.11,1.0,0.27,0.0,0.0,0.0,0.0,0.0,0.0,5.0,0.5,0.03,github_strong
+Depends on context,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,7.69,0.0,0.0,0.025,survey_strong

@@ -520,18 +520,18 @@ def grafico_participacao_relativa(base: pd.DataFrame) -> None:
         columns={
             "github_share": "GitHub repositories",
             "stackoverflow_share": "Stack Overflow Q&A",
-            "forms_unificado_share": "Survey: used + main",
-            "forms_mais_adequada_share": "Survey: suitable",
+            "forms_unificado_share": "Survey (experienced)",
+            "forms_mais_adequada_share": "Survey (suitable)",
         }
     )
 
-    plot_df.plot(kind="bar", figsize=(13, 6))
-    plt.xlabel("Architecture")
-    plt.ylabel("Relative share")
-    plt.ylim(0, 1)
-    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
+    ax = plot_df.plot(kind="bar", figsize=(13, 6))
+    ax.set_xlabel("Architecture")
+    ax.set_ylabel("Cross-source participation")
+    ax.set_ylim(0, 1)
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     plt.xticks(rotation=30, ha="right")
-    plt.legend(title="Source", bbox_to_anchor=(1.02, 1), loc="upper left")
+    ax.legend(title="Source", loc="upper right", frameon=True, framealpha=0.95)
     salvar_plot("grafico_cruzamento_github_stackoverflow_forms_participacao.png")
 
 

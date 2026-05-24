@@ -1,0 +1,11 @@
+architecture,present_on_github,present_on_stackoverflow,present_in_survey_used,present_in_survey_main,present_in_survey_most_suitable,sources_count,source_presence
+MV,1,1,1,1,1,3,github+stackoverflow+forms
+MVC,1,1,1,0,0,3,github+stackoverflow+forms
+MVP,1,1,1,0,0,3,github+stackoverflow+forms
+MVVM,1,1,1,1,1,3,github+stackoverflow+forms
+MVVM-C,1,1,1,1,0,3,github+stackoverflow+forms
+TCA,1,1,1,0,1,3,github+stackoverflow+forms
+VIPER,1,1,1,0,0,3,github+stackoverflow+forms
+MVI,1,1,0,0,0,2,github+stackoverflow
+RIBs,1,0,0,0,0,1,github
+Depends on context,0,0,0,0,1,0,none
